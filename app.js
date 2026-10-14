@@ -249,3 +249,5 @@ $('#k-goal').onchange=e=>LS.set('goal',+e.target.value);
 renderHome();
 if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js');
 window.__lehrerin={bm25,tokens,chunkPages};
+
+$('#home-savekey').onclick=()=>{const v=$('#home-key').value.trim();if(!v){$('#home-key').focus();return}LS.set('key',v);$('#home-key').value='';$('#nokey').classList.add('hidden');try{$('#k-key').value=v}catch(e){}alert('Gespeichert ✓ Du kannst jetzt chatten.')};
