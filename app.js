@@ -347,11 +347,11 @@ function mc(c,box){if(!c._opts)c._opts=[c.a,...c.dis.slice(0,2)].map(t=>({t,ok:t
   box.querySelectorAll('.opt').forEach(b=>b.onclick=()=>choose(+b.dataset.i))}
 const PRAISE=['Super gemacht!','Toll, weiter so!','Sehr gut!','Du wirst immer sicherer!','Klasse!'];
 const COMFORT=['Kein Problem – genau so lernt man. Wir üben das morgen nochmals.','Gut, dass du ehrlich bist. Morgen sitzt es schon besser.','Das ist völlig okay. Schritt für Schritt!'];
-async function grade(c,ok,quiet){const now=Date.now();
-  if(ok){c.level=Math.min((c.seen?c.level:0)+1,INTERVALS.length);c.due=now+INTERVALS[c.level-1]*DAY;S.ok++}
-  else{c.level=0;c.due=now+DAY}
+async function grade(c,ok,quiet){const now=Date.now(),wasRetry=!!c._retry;
+  if(ok){c.level=(c.seen?(c.level||0):0)+1;const iv=c.level<=INTERVALS.length?INTERVALS[c.level-1]:Math.min(365,30*2**(c.level-INTERVALS.length));c.due=now+iv*DAY;if(!c._retry)S.ok++;delete c._retry}
+  else{c.level=0;c.due=now;c._retry=true;if(S&&S.queue){const at=Math.min(S.i+3,S.queue.length);S.queue.splice(at,0,c)}}
   c.seen=true;delete c._factShown;delete c._opts;delete c._noMc;c.last=now;await put('cards',c);
-  const d=today();if(LS.get('doneDay','')!==d){LS.set('doneDay',d);LS.set('doneCount',0)}LS.set('doneCount',LS.get('doneCount',0)+1);
+  const d=today();if(LS.get('doneDay','')!==d){LS.set('doneDay',d);LS.set('doneCount',0)}if(!wasRetry)LS.set('doneCount',LS.get('doneCount',0)+1);
   const days=learnDays();if(!days.includes(d)){days.push(d);LS.set('days',days)}
   const msg=ok?PRAISE[Math.floor(Math.random()*PRAISE.length)]:COMFORT[Math.floor(Math.random()*COMFORT.length)];if(!quiet)toast(msg,1500);S.i++;step()}
 function history_back(){document.querySelector('#v-quiz [data-back]').click()}
