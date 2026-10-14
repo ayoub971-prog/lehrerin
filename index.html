@@ -46,6 +46,14 @@ h1{font-size:30px;color:var(--accent)}h2{font-size:23px}h3{font-size:18px}
 .quizq{font-size:21px;font-family:Fraunces,serif;line-height:1.35}
 .fact{border-left:4px solid var(--accent);padding:8px 12px;background:var(--panel2);border-radius:10px}
 .src{font-size:13px;color:var(--blue)}
+.opts{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.opt{display:flex;flex-wrap:wrap;align-items:center;gap:12px;text-align:left;border-radius:18px;padding:16px;font-size:18px;min-height:64px;color:var(--text);border-width:2px}
+.opt .abc{flex:none;width:32px;height:32px;border-radius:50%;background:var(--panel);display:grid;place-items:center;color:var(--accent);font-weight:700}
+.opt span:nth-child(2){flex:1}.opt:disabled{opacity:1}
+.opt.right{border-color:var(--ok);background:#1d3326}.opt.right .abc{background:var(--ok);color:#10140f}
+.opt.wrong{border-color:#e07a72;background:#3a1f1d}.opt.wrong .abc{background:#e07a72;color:#1a0f0e}
+.opt .lbl{width:100%;font-size:13px;font-weight:700;padding-left:44px}.opt.right .lbl{color:var(--ok)}.opt.wrong .lbl{color:#e07a72}
+.fb{font-size:18px;font-weight:700}.fb.ok{color:var(--ok)}.fb.no{color:var(--accent)}
 .note{background:#2a2216;border:1px solid #5a4322;border-radius:14px;padding:10px 12px;font-size:14px}
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);border-radius:14px;padding:10px 16px;z-index:9;max-width:90%}
 ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}

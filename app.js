@@ -13,6 +13,16 @@ function db(){return dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('l
   d.createObjectStore('projects',{keyPath:'id'});
   for(const s of ['docs','chunks','cards','messages']){const o=d.createObjectStore(s,{keyPath:'id'});o.createIndex('pid','projectId')}};
   r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}))}
+
+/* Schlüssel doppelt sichern (localStorage + IndexedDB), iOS-Speichertrennung/Löschung abfedern */
+function kvDb(){return new Promise((res,rej)=>{const r=indexedDB.open('lehrerin-kv',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function kvGet(k){try{const d=await kvDb();return await new Promise(r=>{const q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r(undefined)})}catch{return undefined}}
+async function kvSet(k,v){try{const d=await kvDb();await new Promise(r=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=r;t.onerror=r})}catch{}}
+function saveKey(v){LS.set('key',v);kvSet('key',v)}
+let keySynced=null;
+function syncKey(){return keySynced||(keySynced=(async()=>{const l=LS.get('key',''),i=await kvGet('key');
+  if(!l&&i)LS.set('key',i);else if(l&&l!==i)await kvSet('key',l)})())}
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch{}
 async function tx(store,mode,fn){const d=await db();return new Promise((res,rej)=>{const t=d.transaction(store,mode);const s=t.objectStore(store);let out;const r=fn(s);if(r)r.onsuccess=()=>out=r.result;t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error)})}
 const put=(s,v)=>tx(s,'readwrite',o=>o.put(v));
 const putMany=(s,arr)=>tx(s,'readwrite',o=>{arr.forEach(v=>o.put(v))});
@@ -98,7 +108,7 @@ function pickVoice(){const saved=LS.get('voice','');let v=voices.find(v=>v.name=
   return voices.find(v=>/de-CH/i.test(v.lang)&&fem.test(v.name))||voices.find(v=>/anna/i.test(v.name))||voices.find(v=>fem.test(v.name)&&!/yannick/i.test(v.name))||voices.find(v=>/de-DE/i.test(v.lang))||voices[0]}
 if('speechSynthesis' in window){loadVoices();speechSynthesis.onvoiceschanged=loadVoices}
 const speakOn=()=>LS.get('speak',false);
-function speak(t){if(!speakOn()||!('speechSynthesis' in window))return;stopSpeak();
+function speak(t,force){if((!speakOn()&&!force)||!('speechSynthesis' in window))return;stopSpeak();
   const clean=t.replace(/\(([^)]*Seite[^)]*)\)/g,'').replace(/[*_#]/g,'');const u=new SpeechSynthesisUtterance(clean);
   const v=pickVoice();if(v){u.voice=v;u.lang=v.lang}else u.lang='de-DE';u.rate=.98;u.pitch=1.05;speechSynthesis.speak(u)}
 function stopSpeak(){try{speechSynthesis.cancel()}catch{}}
@@ -107,7 +117,7 @@ function voiceBtn(){$('#b-voice').textContent=speakOn()?'🔊 Stimme an':'🔇 S
 /* ---------- Home ---------- */
 function learnDays(){return LS.get('days',[])}
 function weekCount(){const d=learnDays();const cut=Date.now()-7*DAY;return d.filter(x=>new Date(x).getTime()>cut).length}
-async function renderHome(){
+async function renderHome(){await syncKey();
   const [ps,cards]=await Promise.all([all('projects'),all('cards')]);const now=Date.now();
   const due=c=>c.seen&&c.due<=now;
   $('#s-due').textContent=cards.filter(due).length;
@@ -152,12 +162,13 @@ async function generateCards(n=5){const chunks=await byP('chunks',cur.id);if(!ch
   const start=Math.floor(Math.random()*Math.max(1,pool.length-3));const pick=pool.slice(start,start+3);
   const mat=pick.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n');
   const prompt=`Erstelle ${n} kurze Lernkarten auf Deutsch (Schweizer Rechtschreibung) NUR aus diesem Material. Jede Karte prüft genau einen wichtigen Fakt.
-Gib JSON zurück: [{"fakt":"der Fakt als 1-2 klare Sätze zum Einprägen","frage":"eine kurze Frage dazu","antwort":"kurze richtige Antwort","stelle":"die Stellenangabe genau wie in eckigen Klammern"}]
+Zu jeder Frage gibt es genau 2 falsche, aber plausible Antworten (aus demselben Themengebiet des Materials, ähnlich lang wie die richtige, eindeutig falsch).
+Gib JSON zurück: [{"fakt":"der Fakt als 1-2 klare Sätze zum Einprägen","frage":"eine kurze Frage dazu","antwort":"kurze richtige Antwort","falsch":["falsche Antwort 1","falsche Antwort 2"],"erklaerung":"1 kurzer Satz, warum die richtige Antwort stimmt","stelle":"die Stellenangabe genau wie in eckigen Klammern"}]
 MATERIAL:\n${mat}`;
   const raw=await gemini({contents:[{role:'user',parts:[{text:prompt}]}],json:true,temp:.4});
   let arr;try{arr=JSON.parse(raw.replace(/^```(json)?|```$/g,''))}catch{throw new Error('Antwort war kein gültiges JSON')}
   if(!Array.isArray(arr))arr=arr.karten||arr.cards||[];
-  const cards=arr.filter(x=>x.frage&&x.antwort).slice(0,n).map(x=>({id:uid(),projectId:cur.id,q:x.frage,a:x.antwort,fact:x.fakt||x.antwort,src:x.stelle||ref(pick[0]),level:0,due:0,seen:false,created:Date.now()}));
+  const cards=arr.filter(x=>x.frage&&x.antwort).slice(0,n).map(x=>({id:uid(),projectId:cur.id,q:x.frage,a:x.antwort,fact:x.fakt||x.antwort,dis:Array.isArray(x.falsch||x.distractors)?(x.falsch||x.distractors).filter(Boolean).slice(0,2):undefined,expl:x.erklaerung||x.explanation||'',src:x.stelle||ref(pick[0]),level:0,due:0,seen:false,created:Date.now()}));
   await putMany('cards',cards);pick.forEach(c=>used.add(c.id));LS.set('used.'+cur.id,[...used]);return cards.length}
 $('#b-gen').onclick=async()=>{const b=$('#b-gen');b.disabled=true;b.textContent='Die Lehrerin bereitet Fragen vor …';
   try{const k=await generateCards(5);if(k)toast(`${k} neue Karten ✓`)}catch(e){toast(errText(e),5000)}
@@ -220,24 +231,52 @@ function step(){const box=$('#q-box');$('#q-bar').style.width=(S.i/S.queue.lengt
   const c=S.queue[S.i];
   if(!c.seen&&!c._factShown){box.innerHTML=`<p class="small muted">Neu · Zuerst einprägen</p><p class="fact">${esc(c.fact)}</p><p class="src">${esc(c.src)}</p><button class="primary big" id="q-next">Verstanden – frag mich</button>`;
     speak(c.fact);$('#q-next').onclick=()=>{c._factShown=true;step()};return}
+  if(!(c.dis&&c.dis.length>=2)&&key()&&!c._noMc){box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p><p class="muted">Die Lehrerin bereitet drei Antworten vor …</p>`;
+    ensureDistractors(c).then(()=>{if(S&&S.queue[S.i]===c)step()});return}
+  if(c.dis&&c.dis.length>=2)return mc(c,box);
   box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p><p class="small muted">Überleg kurz in Ruhe – oder sag die Antwort laut.</p><button class="primary big" id="q-show">Antwort zeigen</button>`;
   speak(c.q);$('#q-show').onclick=()=>{
     box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p><p class="fact">${esc(c.a)}</p><p class="src">${esc(c.src)}</p><div class="row"><button id="q-no">Noch nicht sicher</button><button class="primary" id="q-yes">Gewusst ✓</button></div>`;
     $('#q-yes').onclick=()=>grade(c,true);$('#q-no').onclick=()=>grade(c,false)}}
+async function ensureDistractors(c){try{
+  const prompt=`Hier ist eine Lernkarte. Erfinde genau 2 falsche, aber plausible Antworten aus demselben Themengebiet (ähnlich lang wie die richtige, eindeutig falsch) und 1 kurzen Satz Erklärung, warum die richtige stimmt. Deutsch, Schweizer Rechtschreibung.
+FRAGE: ${c.q}\nRICHTIGE ANTWORT: ${c.a}\nFAKT: ${c.fact}
+Gib JSON zurück: {"falsch":["...","..."],"erklaerung":"..."}`;
+  const raw=await gemini({contents:[{role:'user',parts:[{text:prompt}]}],json:true,temp:.5});
+  let o=JSON.parse(raw.replace(/^```(json)?|```$/g,''));if(Array.isArray(o))o=o[0]||{};
+  const d=(o.falsch||o.distractors||[]).filter(x=>x&&x.trim()&&x.trim()!==c.a.trim()).slice(0,2);
+  if(d.length<2)throw new Error('zu wenige');c.dis=d;if(!c.expl)c.expl=o.erklaerung||o.explanation||'';
+  const st={...c};delete st._factShown;delete st._opts;await put('cards',st)}catch(e){console.warn(e);c._noMc=true}}
+const ABC=['A','B','C'];
+function mc(c,box){if(!c._opts)c._opts=[c.a,...c.dis.slice(0,2)].map(t=>({t,ok:t===c.a})).sort(()=>Math.random()-.5);const o=c._opts;
+  const readQ=()=>c.q+'. '+o.map((x,i)=>`${ABC[i]}: ${x.t}.`).join(' ');
+  box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p>
+  <div class="opts">${o.map((x,i)=>`<button class="opt" data-i="${i}"><span class="abc">${ABC[i]}</span><span>${esc(x.t)}</span></button>`).join('')}</div>
+  <div id="q-fb"></div><div class="row" style="margin-top:12px"><button id="q-read">🔊 Vorlesen</button><button id="q-stop">⏹ Stopp</button></div>`;
+  let after=readQ();
+  speak(after);$('#q-read').onclick=()=>speak(after,true);$('#q-stop').onclick=stopSpeak;
+  box.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{if(box.dataset.done==='1')return;box.dataset.done='1';
+    const ch=o[+b.dataset.i];
+    box.querySelectorAll('.opt').forEach((bb,i)=>{bb.disabled=true;if(o[i].ok){bb.classList.add('right');bb.insertAdjacentHTML('beforeend','<span class="lbl">✓ Richtige Antwort</span>')}});
+    if(!ch.ok){b.classList.add('wrong');b.insertAdjacentHTML('beforeend','<span class="lbl">Deine Wahl</span>')}
+    const warm=ch.ok?PRAISE[Math.floor(Math.random()*PRAISE.length)]:COMFORT[Math.floor(Math.random()*COMFORT.length)];
+    $('#q-fb').innerHTML=`<p class="fb ${ch.ok?'ok':'no'}">${ch.ok?'Richtig! ':'Nicht ganz. '}${esc(warm)}</p><p class="fact">${esc(c.expl||c.fact)}</p><p class="src">📖 ${esc(c.src)}</p><button class="primary big" id="q-weiter">Weiter →</button>`;
+    after=`${ch.ok?'Richtig!':'Nicht ganz.'} Die richtige Antwort ist ${ABC[o.findIndex(x=>x.ok)]}: ${c.a}. ${c.expl||c.fact}`;speak(after);
+    $('#q-weiter').onclick=()=>{stopSpeak();delete box.dataset.done;grade(c,ch.ok,true)}});}
 const PRAISE=['Super gemacht!','Toll, weiter so!','Sehr gut!','Du wirst immer sicherer!','Klasse!'];
 const COMFORT=['Kein Problem – genau so lernt man. Wir üben das morgen nochmals.','Gut, dass du ehrlich bist. Morgen sitzt es schon besser.','Das ist völlig okay. Schritt für Schritt!'];
-async function grade(c,ok){const now=Date.now();
+async function grade(c,ok,quiet){const now=Date.now();
   if(ok){c.level=Math.min((c.seen?c.level:0)+1,INTERVALS.length);c.due=now+INTERVALS[c.level-1]*DAY;S.ok++}
   else{c.level=0;c.due=now+DAY}
-  c.seen=true;delete c._factShown;c.last=now;await put('cards',c);
+  c.seen=true;delete c._factShown;delete c._opts;delete c._noMc;c.last=now;await put('cards',c);
   const d=today();if(LS.get('doneDay','')!==d){LS.set('doneDay',d);LS.set('doneCount',0)}LS.set('doneCount',LS.get('doneCount',0)+1);
   const days=learnDays();if(!days.includes(d)){days.push(d);LS.set('days',days)}
-  const msg=ok?PRAISE[Math.floor(Math.random()*PRAISE.length)]:COMFORT[Math.floor(Math.random()*COMFORT.length)];toast(msg,1500);S.i++;step()}
+  const msg=ok?PRAISE[Math.floor(Math.random()*PRAISE.length)]:COMFORT[Math.floor(Math.random()*COMFORT.length)];if(!quiet)toast(msg,1500);S.i++;step()}
 function history_back(){document.querySelector('#v-quiz [data-back]').click()}
 
 /* ---------- Einstellungen ---------- */
 function renderSettings(){$('#k-key').value=key();$('#k-model').value=model();$('#k-speak').checked=speakOn();$('#k-goal').value=String(LS.get('goal',10));loadVoices();$('#k-status').textContent=''}
-$('#b-savekey').onclick=()=>{LS.set('key',$('#k-key').value.trim());LS.set('model',$('#k-model').value.trim()||DEFAULT_MODEL);$('#k-status').textContent='Gespeichert ✓'};
+$('#b-savekey').onclick=()=>{saveKey($('#k-key').value.trim());try{$('#nokey').classList.toggle('hidden',!!key())}catch{};LS.set('model',$('#k-model').value.trim()||DEFAULT_MODEL);$('#k-status').textContent='Gespeichert ✓'};
 $('#b-testkey').onclick=async()=>{$('#b-savekey').click();$('#k-status').textContent='Teste …';
   try{const t=await gemini({contents:[{role:'user',parts:[{text:'Sag in einem kurzen Satz auf Deutsch Hallo.'}]}]});$('#k-status').textContent='Funktioniert ✓ – '+t}catch(e){$('#k-status').textContent=errText(e)}};
 $('#k-speak').onchange=e=>LS.set('speak',e.target.checked);
@@ -250,4 +289,4 @@ renderHome();
 if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js');
 window.__lehrerin={bm25,tokens,chunkPages};
 
-$('#home-savekey').onclick=()=>{const v=$('#home-key').value.trim();if(!v){$('#home-key').focus();return}LS.set('key',v);$('#home-key').value='';$('#nokey').classList.add('hidden');try{$('#k-key').value=v}catch(e){}alert('Gespeichert ✓ Du kannst jetzt chatten.')};
+$('#home-savekey').onclick=()=>{const v=$('#home-key').value.trim();if(!v){$('#home-key').focus();return}saveKey(v);$('#home-key').value='';$('#nokey').classList.add('hidden');try{$('#k-key').value=v}catch(e){}alert('Gespeichert ✓ Du kannst jetzt chatten.')};
