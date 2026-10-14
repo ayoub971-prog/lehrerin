@@ -63,6 +63,7 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 .flash .side{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .flash.back{border-color:var(--ok)}
 #b-mic.rec{background:#e07a72;border-color:#e07a72;color:#1a0f0e}
+.sumpart{padding:6px 0 10px;border-bottom:1px solid var(--line)}.sumpart:last-child{border:0}.sumpart.reading{background:#2a2216;border-radius:12px;padding:6px 10px}
 </style>
 </head>
 <body>
@@ -95,11 +96,14 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
   <div class="row" style="margin-top:10px"><button class="big" id="b-chat">💬 Mit der Lehrerin sprechen</button></div>
   <div class="card hidden" id="p-book">
     <h2>📖 Buch</h2>
-    <p class="small" id="bk-status"></p>
-    <div class="bar"><i id="bk-bar" style="width:0"></i></div>
-    <div class="row" style="margin-top:10px"><button class="primary" id="bk-run">▶ Wichtigstes herausziehen</button><button id="bk-pause" class="hidden">⏸ Pause</button></div>
-    <div class="row" style="margin-top:10px"><button class="big" id="bk-cards">🃏 Karteikarten ansehen</button></div>
-    <p class="small muted">Die Lehrerin liest das Buch Stück für Stück und macht aus den wichtigsten Inhalten Karteikarten. Du kannst die App jederzeit schliessen – beim nächsten Öffnen geht es dort weiter.</p>
+    <div id="bk-choice"><p id="bk-choice-h" style="font-weight:600">Was soll die Lehrerin daraus machen?</p>
+      <button class="primary big" id="bk-mk-cards">🃏 Lernkartei erstellen</button>
+      <button class="primary big" id="bk-mk-sum" style="margin-top:10px">📝 Zusammenfassungen erstellen</button>
+      <p class="small muted">Es wird nur das erstellt, was du wählst – das spart dein Gratis-Kontingent. Das andere kannst du später hier dazunehmen.</p></div>
+    <div id="bk-jobs"></div>
+    <div class="row" style="margin-top:10px"><button class="big hidden" id="bk-cards">🃏 Karteikarten ansehen</button></div>
+    <div class="row" style="margin-top:10px"><button class="big hidden" id="bk-sum">📝 Zusammenfassung lesen</button></div>
+    <p class="small muted">Du kannst die App jederzeit schliessen – beim nächsten Öffnen geht es dort weiter.</p>
   </div>
   <div class="card">
     <h2>Material</h2>
@@ -142,10 +146,13 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
   <div class="top"><button class="ghost" data-back>‹ Zurück</button></div>
   <h1>Buch-Modus</h1>
   <div class="card">
-    <p>Lade ein ganzes Buch hoch (PDF oder .txt) oder füge den Text ein. Die Lehrerin zieht die wichtigsten Inhalte heraus und macht daraus Karteikarten – mit Seitenangabe.</p>
+    <p>Lade ein ganzes Buch hoch (PDF, .txt, Fotos oder Screenshots) oder füge den Text ein. Danach wählst du: Lernkartei oder Zusammenfassungen – immer mit Seitenangabe.</p>
     <input id="bk-title" placeholder="Titel des Buchs" style="margin:8px 0">
-    <button class="primary big" id="bk-upload">PDF oder .txt auswählen</button>
-    <input type="file" id="bk-file" accept="application/pdf,.pdf,text/plain,.txt" class="hidden">
+    <button class="primary big" id="bk-upload">PDF, .txt oder Bilder auswählen</button>
+    <button class="big" id="bk-camera" style="margin-top:10px">📷 Seiten fotografieren</button>
+    <input type="file" id="bk-file" accept="application/pdf,.pdf,text/plain,.txt,image/*,.heic,.heif" multiple class="hidden">
+    <input type="file" id="bk-cam" accept="image/*" capture="environment" class="hidden">
+    <p class="small muted">Mehrere Bilder oder Screenshots auf einmal gehen auch. Bei Fotos und eingescannten PDFs liest die Lehrerin den Text mit der KI (eine Anfrage pro Seite).</p>
     <details style="margin-top:12px"><summary class="muted">Oder Text einfügen</summary>
       <textarea id="bk-text" placeholder="Buchtext hier einfügen …"></textarea>
       <button id="bk-addtext" style="margin-top:8px">Text übernehmen</button>
@@ -160,6 +167,15 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
   <div class="card flash" id="fl-card"></div>
   <div class="row"><button id="fl-prev">‹ Zurück</button><button id="fl-read">🔊 Vorlesen</button><button id="fl-next">Weiter ›</button></div>
   <div class="row" style="margin-top:10px"><button class="primary big" id="fl-quiz">📚 Abfragen (3 Antworten)</button></div>
+</section>
+
+<section id="v-sum" class="hidden">
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button></div>
+  <h1 id="sum-title"></h1><h2>Zusammenfassung</h2>
+  <p class="small muted" id="sum-status"></p>
+  <div class="row"><button class="primary" id="sum-play">▶ Vorlesen</button><button id="sum-restart">⏮ Von vorn</button></div>
+  <div class="card" id="sum-list"></div>
+  <button class="primary big" id="sum-repeat">📚 Jetzt wiederholen</button>
 </section>
 
 <section id="v-settings" class="hidden">

@@ -34,8 +34,8 @@ async function delByP(s,pid){const items=await byP(s,pid);await tx(s,'readwrite'
 
 /* ---------- Navigation ---------- */
 let cur=null; // aktuelles Projekt
-const views=['home','project','chat','quiz','settings','book','flash'];let stack=['home'];
-function show(v,push=true){views.forEach(x=>$('#v-'+x).classList.toggle('hidden',x!==v));if(push&&stack.at(-1)!==v)stack.push(v);window.scrollTo(0,0);stopSpeak();if(v!=='chat'&&typeof talkMode!=='undefined'&&(talkMode||rec||mr)){talkMode=false;try{stopMic()}catch{}}}
+const views=['home','project','chat','quiz','settings','book','flash','sum'];let stack=['home'];
+function show(v,push=true){views.forEach(x=>$('#v-'+x).classList.toggle('hidden',x!==v));if(push&&stack.at(-1)!==v)stack.push(v);window.scrollTo(0,0);stopSpeak();if(typeof SUM!=='undefined')SUM.playing=false;if(v!=='chat'&&typeof talkMode!=='undefined'&&(talkMode||rec||mr)){talkMode=false;try{stopMic()}catch{}}}
 document.addEventListener('click',e=>{if(e.target.closest('[data-back]')){if(stack.at(-1)==='quiz')endSession();stack.pop();const v=stack.at(-1)||'home';show(v,false);if(v==='home')renderHome();if(v==='project')renderProject()}});
 
 /* ---------- Text, Chunks, Suche ---------- */
@@ -146,7 +146,7 @@ async function renderHome(){await syncKey();
   $('#nokey').classList.toggle('hidden',!!key());
   $('#projlist').innerHTML=ps.length?ps.sort((a,b)=>b.created-a.created).map(p=>{const pc=cards.filter(c=>c.projectId===p.id);const d=pc.filter(due).length,n=pc.filter(c=>!c.seen).length;
     return `<div class="item" data-open="${p.id}"><span class="name">${p.type==='book'?'📖 ':''}${esc(p.name)}</span>${d?`<span class="badge">${d} fällig</span>`:n?`<span class="small muted">${n} neu</span>`:''}<span class="muted">›</span></div>`}).join(''):'<p class="muted small">Noch kein Projekt. Leg eins an, z. B. pro Buch oder Kapitel.</p>'}
-$('#projlist').addEventListener('click',async e=>{const it=e.target.closest('[data-open]');if(!it)return;cur=(bookObj&&bookObj.id===it.dataset.open)?bookObj:(await all('projects')).find(p=>p.id===it.dataset.open);show('project');renderProject()});
+$('#projlist').addEventListener('click',async e=>{const it=e.target.closest('[data-open]');if(!it)return;cur=(bookObj&&bookObj.id===it.dataset.open)?bookObj:migrate((await all('projects')).find(p=>p.id===it.dataset.open));show('project');renderProject()});
 $('#b-addproj').onclick=async()=>{const n=$('#newproj').value.trim();if(!n)return $('#newproj').focus();const p={id:uid(),name:n,created:Date.now()};await put('projects',p);$('#newproj').value='';cur=p;show('project');renderProject()};
 $('#newproj').addEventListener('keydown',e=>{if(e.key==='Enter')$('#b-addproj').click()});
 $('#b-settings').onclick=()=>{show('settings');renderSettings()};$('#go-settings').onclick=e=>{e.preventDefault();$('#b-settings').click()};
@@ -367,54 +367,119 @@ $('#k-goal').onchange=e=>LS.set('goal',+e.target.value);
 /* ---------- Buch-Modus ---------- */
 const SEG=14000; // Zeichen pro KI-Anfrage (Gratis-Stufe schonen)
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-function makeSegments(chunks){chunks=[...chunks].sort((a,b)=>a.page-b.page||a.order-b.order);const segs=[];let cur_=[],len=0;
+function makeSegments(chunks){chunks=[...chunks].sort((a,b)=>a.order-b.order);const segs=[];let cur_=[],len=0;
   for(const c of chunks){if(len+c.text.length>SEG&&cur_.length){segs.push(cur_);cur_=[];len=0}cur_.push(c.id);len+=c.text.length}if(cur_.length)segs.push(cur_);return segs}
 let bookBusy=null,bookObj=null; // laufendes Buch
+const JOBS={cards:'Lernkartei',sum:'Zusammenfassung'};
+function migrate(p){const b=p&&p.book;if(!b)return p;if(!b.jobs){b.jobs={};if(b.next!==undefined)b.jobs.cards={next:b.next,state:b.state,made:b.made||0,err:b.err||''};delete b.next;delete b.state;delete b.made;delete b.err}b.sums=b.sums||[];return p}
 $('#b-newbook').onclick=()=>{$('#bk-title').value='';$('#bk-text').value='';$('#bk-progress').textContent='';show('book')};
 $('#bk-upload').onclick=()=>$('#bk-file').click();
-async function createBook(name,pages,label){
-  const p={id:uid(),name,created:Date.now(),type:'book'};cur=p;
-  const id=uid();const chunks=chunkPages(pages,id,name,p.id,label).map((c,i)=>({...c,order:i}));
-  if(!chunks.length){toast('In dieser Datei wurde kein Text gefunden (evtl. eingescannt).',4000);cur=null;return}
-  p.book={segs:makeSegments(chunks),next:0,state:'run',pages:pages.length,label,made:0};
-  await put('projects',p);await put('docs',{id,projectId:p.id,name,pages:pages.length,label,added:Date.now()});await putMany('chunks',chunks);
-  stack=['home','project'];show('project',false);renderProject();processBook()}
-$('#bk-file').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const title=$('#bk-title').value.trim()||f.name.replace(/\.(pdf|txt)$/i,'');
-  try{if(/pdf$/i.test(f.type)||/\.pdf$/i.test(f.name)){const pages=await readPdf(f,(i,n)=>$('#bk-progress').textContent=`Lese das Buch: Seite ${i} von ${n}`);await createBook(title,pages,'Seite')}
-    else await createBook(title,textToPages(await f.text()),'Abschnitt')}catch(err){console.error(err);toast('Konnte „'+f.name+'“ nicht lesen.',4000)}
-  $('#bk-progress').textContent=''};
-$('#bk-addtext').onclick=async()=>{const t=$('#bk-text').value.trim();if(!t)return $('#bk-text').focus();await createBook($('#bk-title').value.trim()||'Eingefügtes Buch',textToPages(t),'Abschnitt')};
-async function renderBook(){const box=$('#p-book');const b=cur&&cur.book;box.classList.toggle('hidden',!b);if(!b)return;
-  const n=b.segs.length,done=Math.min(b.next,n);$('#bk-bar').style.width=(done/n*100)+'%';
-  const running=bookBusy===cur.id;
-  $('#bk-status').textContent=done>=n?`Fertig ✓ Das ganze Buch (${b.pages} ${b.label==='Seite'?'Seiten':'Abschnitte'}) ist durchgearbeitet – ${b.made} Karteikarten.`:
-    `${running?'Die Lehrerin liest gerade':'Pausiert bei'} Teil ${done+1} von ${n} · ${b.made} Karteikarten bisher${b.err?' · '+b.err:''}`;
-  $('#bk-run').classList.toggle('hidden',running||done>=n);$('#bk-run').textContent=done?'▶ Weiter verarbeiten':'▶ Wichtigstes herausziehen';
-  $('#bk-pause').classList.toggle('hidden',!running)}
-$('#bk-run').onclick=async()=>{cur.book.state='run';cur.book.err='';await put('projects',cur);processBook()};
-$('#bk-pause').onclick=async()=>{cur.book.state='pause';await put('projects',cur);renderBook()};
-async function bookCards(p,seg){const chunks=(await byP('chunks',p.id)).filter(c=>seg.includes(c.id)).sort((a,b)=>a.page-b.page||a.order-b.order);
-  const mat=chunks.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n');
-  const prompt=`Du bist eine Lehrerin. Unten ist ein Teil des Buchs „${p.name}“. Zieh NUR die allerwichtigsten Inhalte heraus (Kernaussagen, zentrale Begriffe, wichtige Zusammenhänge – keine Nebensächlichkeiten) und mach daraus 3 bis 6 Karteikarten auf Deutsch (Schweizer Rechtschreibung, „ss“ statt „ß“).
-Regeln: Alles muss AUSSCHLIESSLICH aus diesem Text stammen, nichts erfinden, kein Allgemeinwissen. Jede Karte prüft genau einen wichtigen Punkt. Zu jeder Frage genau 2 falsche, aber plausible Antworten (ähnlich lang, eindeutig falsch).
-Gib JSON zurück: [{"fakt":"der Punkt in 1-2 klaren Sätzen","frage":"kurze Frage","antwort":"kurze richtige Antwort","falsch":["...","..."],"erklaerung":"1 kurzer Satz","stelle":"Stellenangabe genau wie in eckigen Klammern"}]
+$('#bk-camera').onclick=()=>$('#bk-cam').click();
+/* Bilder & eingescannte Seiten: Gemini liest den Text */
+const blobB64=blob=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=()=>rej(r.error);r.readAsDataURL(blob)});
+async function ocrBlob(blob,mime){let tries=0;
+  for(;;){try{const t=await gemini({contents:[{role:'user',parts:[{inlineData:{mimeType:mime,data:await blobB64(blob)}},{text:'Schreib den gesamten lesbaren Text auf diesem Bild (Buchseite, Foto oder Screenshot) genau ab, in der ursprünglichen Reihenfolge. Nichts zusammenfassen, nichts erfinden, nichts übersetzen. Gib NUR den Text zurück. Wenn kein Text zu sehen ist, gib „-“ zurück.'}]}],temp:0,maxTokens:4000});
+      return t.trim()==='-'?'':t}
+    catch(e){if(e.status===429&&tries++<3){await sleep(window.__bookWait??60000);continue}throw e}}}
+async function readPdfOcr(file,onp){const pages=await readPdf(file,onp);let pdoc=null;
+  for(const pg of pages){if(pg.text.replace(/\s/g,'').length>=30)continue;if(!key())break;
+    if(!pdoc)pdoc=await pdfjs.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+    onp&&onp(pg.page,pages.length,'Seite ohne Text – die Lehrerin liest das Bild');
+    const page=await pdoc.getPage(pg.page);const vp=page.getViewport({scale:1.6});const cv=document.createElement('canvas');cv.width=vp.width;cv.height=vp.height;
+    await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',.82));
+    pg.text=await ocrBlob(blob,'image/jpeg');pg.ocr=true;await sleep(window.__bookDelay??4500)}
+  return pages}
+const isImg=f=>/^image\//i.test(f.type)||/\.(jpe?g|png|heic|heif|webp|gif)$/i.test(f.name);
+const isPdf=f=>/pdf$/i.test(f.type)||/\.pdf$/i.test(f.name);
+async function filesToDocs(files,prog){const docs=[];const imgs=files.filter(isImg);
+  for(const f of files.filter(f=>!isImg(f))){
+    if(isPdf(f))docs.push({name:f.name,label:'Seite',pages:await readPdfOcr(f,(i,n,extra)=>prog(`Lese „${f.name}“: Seite ${i} von ${n}${extra?' · '+extra:''}`))});
+    else docs.push({name:f.name,label:'Abschnitt',pages:textToPages(await f.text())})}
+  if(imgs.length){if(!key())throw new Error('NOKEY');const pages=[];
+    for(let i=0;i<imgs.length;i++){prog(`Die Lehrerin liest Bild ${i+1} von ${imgs.length} …`);const f=imgs[i];
+      const mime=f.type||(/\.png$/i.test(f.name)?'image/png':/\.hei[cf]$/i.test(f.name)?'image/heic':'image/jpeg');
+      pages.push({page:i+1,text:await ocrBlob(f,mime)});if(i<imgs.length-1)await sleep(window.__bookDelay??4500)}
+    docs.push({name:imgs.length===1?imgs[0].name:`${imgs.length} Bilder`,label:'Bild',pages})}
+  return docs}
+async function createBook(name,docs){
+  const p={id:uid(),name,created:Date.now(),type:'book'};let order=0;const allChunks=[],docRecs=[];let pages=0;
+  for(const d of docs){const id=uid();const ch=chunkPages(d.pages,id,d.name,p.id,d.label).map(c=>({...c,order:order++}));if(!ch.length)continue;
+    allChunks.push(...ch);pages+=d.pages.length;docRecs.push({id,projectId:p.id,name:d.name,pages:d.pages.length,label:d.label,added:Date.now()})}
+  if(!allChunks.length){toast('Darin wurde kein Text gefunden.',4000);return}
+  p.book={segs:makeSegments(allChunks),pages,label:docs[0].label,jobs:{},sums:[]};
+  await put('projects',p);for(const d of docRecs)await put('docs',d);await putMany('chunks',allChunks);
+  cur=p;stack=['home','project'];show('project',false);renderProject()}
+async function handleBookFiles(files){if(!files.length)return;const title=$('#bk-title').value.trim()||files[0].name.replace(/\.(pdf|txt|jpe?g|png|heic|heif|webp)$/i,'');
+  try{const docs=await filesToDocs(files,t=>$('#bk-progress').textContent=t);await createBook(title,docs)}
+  catch(err){console.error(err);const m=err.message==='NOKEY'||err.status?errText(err):'Konnte die Datei nicht lesen ('+err.message+').';$('#bk-progress').textContent=m;toast(m,5000);return}
+  $('#bk-progress').textContent=''}
+$('#bk-file').onchange=e=>{const f=[...e.target.files];e.target.value='';handleBookFiles(f)};
+$('#bk-cam').onchange=e=>{const f=[...e.target.files];e.target.value='';handleBookFiles(f)};
+$('#bk-addtext').onclick=async()=>{const t=$('#bk-text').value.trim();if(!t)return $('#bk-text').focus();await createBook($('#bk-title').value.trim()||'Eingefügter Text',[{name:'Eingefügter Text',label:'Abschnitt',pages:textToPages(t)}])};
+async function renderBook(){const box=$('#p-book');const b=cur&&cur.book;box.classList.toggle('hidden',!b);if(!b)return;migrate(cur);
+  const n=b.segs.length,running=bookBusy===cur.id;const started=Object.keys(b.jobs);
+  $('#bk-choice-h').textContent=started.length?'Zusätzlich erstellen:':'Was soll die Lehrerin daraus machen?';
+  $('#bk-choice').classList.toggle('hidden',started.length>=2);
+  $('#bk-mk-cards').classList.toggle('hidden',!!b.jobs.cards);$('#bk-mk-sum').classList.toggle('hidden',!!b.jobs.sum);
+  $('#bk-jobs').innerHTML=started.map(k=>{const j=b.jobs[k],done=Math.min(j.next,n);
+    const txt=done>=n?`${JOBS[k]}: fertig ✓ (${k==='cards'?j.made+' Karten':b.sums.filter(Boolean).length+' Teile, '+j.made+' Wiederholungsfragen'})`:
+      `${JOBS[k]}: ${running&&j.state==='run'?'die Lehrerin liest gerade':'pausiert bei'} Teil ${done+1} von ${n}${j.err?' · '+j.err:''}`;
+    return `<p class="small" style="margin:10px 0 4px">${esc(txt)}</p><div class="bar"><i style="width:${done/n*100}%"></i></div>${done<n?`<button class="small" data-job="${k}" style="margin-top:6px">${j.state==='run'&&running?'⏸ Pause':'▶ Weiter'}</button>`:''}`}).join('');
+  $('#bk-cards').classList.toggle('hidden',!b.jobs.cards);$('#bk-sum').classList.toggle('hidden',!b.jobs.sum)}
+$('#bk-jobs').addEventListener('click',async e=>{const btn=e.target.closest('[data-job]');if(!btn)return;const j=cur.book.jobs[btn.dataset.job];
+  if(j.state==='run'&&bookBusy===cur.id){j.state='pause'}else{j.state='run';j.err=''}await put('projects',cur);renderBook();processBook()});
+async function startJob(k){migrate(cur);if(!cur.book.jobs[k])cur.book.jobs[k]={next:0,state:'run',made:0,err:''};await put('projects',cur);renderBook();processBook()}
+$('#bk-mk-cards').onclick=()=>startJob('cards');$('#bk-mk-sum').onclick=()=>startJob('sum');
+const CARD_JSON='{"fakt":"der Punkt in 1-2 klaren Sätzen","frage":"kurze Frage","antwort":"kurze richtige Antwort","falsch":["...","..."],"erklaerung":"1 kurzer Satz","stelle":"Stellenangabe genau wie in eckigen Klammern"}';
+const RULES='Regeln: Alles muss AUSSCHLIESSLICH aus diesem Text stammen, nichts erfinden, kein Allgemeinwissen. Deutsch, Schweizer Rechtschreibung („ss“ statt „ß“). Jede Frage prüft genau einen wichtigen Punkt und hat genau 2 falsche, aber plausible Antworten (ähnlich lang, eindeutig falsch).';
+function toCards(arr,p,chunks){return (arr||[]).filter(x=>x&&x.frage&&x.antwort).slice(0,6).map(x=>({id:uid(),projectId:p.id,q:x.frage,a:x.antwort,fact:x.fakt||x.antwort,dis:Array.isArray(x.falsch)?x.falsch.filter(Boolean).slice(0,2):undefined,expl:x.erklaerung||'',src:x.stelle||(chunks[0]?ref(chunks[0]):p.name),level:0,due:0,seen:false,created:Date.now(),book:true}))}
+const parseJ=raw=>{try{return JSON.parse(raw.replace(/^```(json)?|```$/g,''))}catch{throw new Error('Antwort war kein gültiges JSON')}};
+async function segChunks(p,seg){return (await byP('chunks',p.id)).filter(c=>seg.includes(c.id)).sort((a,b)=>a.order-b.order)}
+async function bookCards(p,seg){const chunks=await segChunks(p,seg);const mat=chunks.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n');
+  const prompt=`Du bist eine Lehrerin. Unten ist ein Teil von „${p.name}“. Zieh NUR die allerwichtigsten Inhalte heraus (Kernaussagen, zentrale Begriffe, wichtige Zusammenhänge – keine Nebensächlichkeiten) und mach daraus 3 bis 6 Karteikarten.
+${RULES}
+Gib JSON zurück: [${CARD_JSON}]
 Wenn der Text nichts Wichtiges enthält (z. B. Inhaltsverzeichnis, Impressum), gib [] zurück.
 TEXT:\n${mat}`;
-  const raw=await gemini({contents:[{role:'user',parts:[{text:prompt}]}],json:true,temp:.3,maxTokens:3000});
-  let arr;try{arr=JSON.parse(raw.replace(/^```(json)?|```$/g,''))}catch{throw new Error('Antwort war kein gültiges JSON')}
-  if(!Array.isArray(arr))arr=arr.karten||arr.cards||[];
-  return arr.filter(x=>x&&x.frage&&x.antwort).slice(0,6).map(x=>({id:uid(),projectId:p.id,q:x.frage,a:x.antwort,fact:x.fakt||x.antwort,dis:Array.isArray(x.falsch)?x.falsch.filter(Boolean).slice(0,2):undefined,expl:x.erklaerung||'',src:x.stelle||(chunks[0]?ref(chunks[0]):p.name),level:0,due:0,seen:false,created:Date.now(),book:true}))}
-async function processBook(){if(bookBusy||!cur||!cur.book)return;const p=cur;bookBusy=p.id;bookObj=p;renderBook();let fails=0;
-  try{while(p.book.next<p.book.segs.length&&p.book.state==='run'){
-    try{const cards=await bookCards(p,p.book.segs[p.book.next]);if(cards.length)await putMany('cards',cards);
-      p.book.made+=cards.length;p.book.next++;p.book.err='';fails=0;await put('projects',p);if(cur===p)renderProject();
-      if(p.book.next<p.book.segs.length)await sleep(window.__bookDelay??4500)}
+  let arr=parseJ(await gemini({contents:[{role:'user',parts:[{text:prompt}]}],json:true,temp:.3,maxTokens:3000}));
+  if(!Array.isArray(arr))arr=arr.karten||arr.cards||[];return {cards:toCards(arr,p,chunks)}}
+async function bookSum(p,seg){const chunks=await segChunks(p,seg);const mat=chunks.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n');
+  const prompt=`Du bist eine Lehrerin. Unten ist ein Teil von „${p.name}“. Fasse die allerwichtigsten Punkte dieses Teils kurz, klar und gut vorlesbar zusammen (3 bis 6 Sätze, kein Markdown, keine Aufzählungszeichen) und erstelle 2 Wiederholungsfragen dazu.
+${RULES}
+Gib JSON zurück: {"titel":"kurzer Titel dieses Teils (z. B. Kapitelname, wenn erkennbar)","zusammenfassung":"...","fragen":[${CARD_JSON}]}
+Wenn der Text nichts Wichtiges enthält (z. B. Inhaltsverzeichnis, Impressum), gib {"titel":"","zusammenfassung":"","fragen":[]} zurück.
+TEXT:\n${mat}`;
+  let o=parseJ(await gemini({contents:[{role:'user',parts:[{text:prompt}]}],json:true,temp:.3,maxTokens:2500}));if(Array.isArray(o))o=o[0]||{};
+  const pg=chunks.map(c=>c.page);const lab=chunks[0]?chunks[0].label||'Seite':'Seite';
+  const sum=o.zusammenfassung?{titel:o.titel||'',text:o.zusammenfassung,from:Math.min(...pg),to:Math.max(...pg),label:lab,doc:chunks[0]?.docName||''}:null;
+  return {cards:toCards(o.fragen,p,chunks).slice(0,3),sum}}
+async function processBook(){if(bookBusy||!cur||!cur.book)return;const p=migrate(cur);bookBusy=p.id;bookObj=p;renderBook();let fails=0;
+  const nextJob=()=>['sum','cards'].find(k=>p.book.jobs[k]&&p.book.jobs[k].state==='run'&&p.book.jobs[k].next<p.book.segs.length);
+  try{let k;while(k=nextJob()){const j=p.book.jobs[k];
+    try{const r=await (k==='sum'?bookSum:bookCards)(p,p.book.segs[j.next]);if(r.cards.length)await putMany('cards',r.cards);
+      if(k==='sum')p.book.sums[j.next]=r.sum;
+      j.made+=r.cards.length;j.next++;j.err='';fails=0;await put('projects',p);if(cur===p)renderProject();
+      if(j.next>=p.book.segs.length&&cur===p)toast(`${JOBS[k]} fertig ✓`,3500);
+      if(nextJob())await sleep(window.__bookDelay??4500)}
     catch(e){console.warn(e);
-      if(e.message==='NOKEY'||e.status===400||e.status===403||e.status===404||++fails>3){p.book.state='pause';p.book.err=errText(e);await put('projects',p);toast(errText(e),5000);break}
-      if(e.status===429){p.book.err='Kontingent erreicht – ich warte kurz und mache dann weiter …';if(cur===p)renderBook();await sleep(window.__bookWait??60000)}
+      if(e.message==='NOKEY'||e.status===400||e.status===401||e.status===403||e.status===404||++fails>3){j.state='pause';j.err=errText(e);await put('projects',p);toast(errText(e),5000);fails=0;continue}
+      if(e.status===429){j.err='Kontingent erreicht – ich warte kurz und mache dann weiter …';if(cur===p)renderBook();await sleep(window.__bookWait??60000)}
       else await sleep(3000)}}}
-  finally{bookBusy=null;bookObj=null;if(cur===p){renderBook();renderProject()}}
-  if(p.book.next>=p.book.segs.length&&cur===p)toast(`Buch fertig ✓ ${p.book.made} Karteikarten`,3500)}
+  finally{bookBusy=null;bookObj=null;if(cur===p){renderBook();renderProject()}}}
+// Zusammenfassung lesen + vorlesen (eigene Pause/Weiter, iOS-fest)
+let SUM={parts:[],i:0,playing:false};
+$('#bk-sum').onclick=()=>openSum();
+function openSum(){const b=migrate(cur).book;const list=b.sums.map((x,i)=>x&&{...x,i}).filter(Boolean);show('sum');$('#sum-title').textContent=cur.name;
+  const j=b.jobs.sum,n=b.segs.length;$('#sum-status').textContent=j&&j.next<n?`Noch in Arbeit: Teil ${Math.min(j.next,n)} von ${n} fertig. Weitere Teile erscheinen hier, sobald sie fertig sind.`:'';
+  $('#sum-list').innerHTML=list.length?list.map((x,k)=>`<div class="sumpart" data-k="${k}"><h3>${esc(x.titel||'Teil '+(x.i+1))}</h3><p class="src">📖 ${esc(x.doc)}, ${x.label==='Seite'?'Seite':x.label} ${x.from}${x.to!==x.from?'–'+x.to:''}</p><p>${esc(x.text)}</p></div>`).join(''):'<p class="muted">Noch keine Zusammenfassung – die Lehrerin liest noch.</p>';
+  SUM.parts=list.flatMap((x,k)=>sentences((x.titel?x.titel+'. ':'')+x.text).map(t=>({t,k})));SUM.i=Math.min(LS.get('sumpos.'+cur.id,0),Math.max(0,SUM.parts.length-1));SUM.playing=false;SUM.started=false;sumBtns()}
+function sumBtns(){$('#sum-play').textContent=SUM.playing?'⏸ Pause':(SUM.i>0||SUM.started?'▶ Weiter vorlesen':'▶ Vorlesen');
+  document.querySelectorAll('.sumpart').forEach(el=>el.classList.toggle('reading',SUM.playing&&SUM.parts[SUM.i]&&+el.dataset.k===SUM.parts[SUM.i].k))}
+function sumNext(){if(!SUM.playing)return;if(SUM.i>=SUM.parts.length){SUM.playing=false;SUM.i=0;LS.set('sumpos.'+cur.id,0);sumBtns();return}
+  sumBtns();const me=SUM.i;speak(SUM.parts[me].t,true,()=>{if(!SUM.playing||SUM.i!==me)return;SUM.i++;LS.set('sumpos.'+cur.id,SUM.i);sumNext()})}
+$('#sum-play').onclick=()=>{if(!SUM.parts.length)return;if(SUM.playing){SUM.playing=false;stopSpeak();sumBtns()}else{SUM.playing=true;SUM.started=true;sumNext()}};
+$('#sum-restart').onclick=()=>{SUM.i=0;LS.set('sumpos.'+cur.id,0);SUM.playing=true;stopSpeak();sumNext()};
+$('#sum-repeat').onclick=()=>{SUM.playing=false;stopSpeak();stack.pop();startSession()};
 // Karteikarten
 let FL={cards:[],i:0,back:false};
 $('#bk-cards').onclick=async()=>{const cards=(await byP('cards',cur.id)).sort((a,b)=>a.created-b.created);if(!cards.length){toast('Noch keine Karteikarten – einen Moment, die Lehrerin liest noch.');return}
@@ -429,7 +494,7 @@ $('#fl-next').onclick=()=>{if(FL.i<FL.cards.length-1){FL.i++;FL.back=false;flash
 $('#fl-read').onclick=()=>{const c=FL.cards[FL.i];speak(FL.back?c.a+'. '+c.fact:c.q,true)};
 $('#fl-quiz').onclick=()=>{stack.pop();startSession()};
 // Fortsetzen nach Neustart: offene Bücher weiterlaufen lassen
-async function resumeBooks(){const ps=await all('projects');const p=ps.find(p=>p.book&&p.book.state==='run'&&p.book.next<p.book.segs.length);
+async function resumeBooks(){const ps=(await all('projects')).map(migrate);const p=ps.find(p=>p.book&&Object.values(p.book.jobs).some(j=>j.state==='run'&&j.next<p.book.segs.length));
   if(p&&key()){const was=cur;cur=p;processBook();cur=was}}
 
 /* ---------- Start ---------- */
