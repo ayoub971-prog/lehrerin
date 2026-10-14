@@ -18,10 +18,11 @@ function db(){return dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('l
 function kvDb(){return new Promise((res,rej)=>{const r=indexedDB.open('lehrerin-kv',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function kvGet(k){try{const d=await kvDb();return await new Promise(r=>{const q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r(undefined)})}catch{return undefined}}
 async function kvSet(k,v){try{const d=await kvDb();await new Promise(r=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=r;t.onerror=r})}catch{}}
-function saveKey(v){LS.set('key',v);kvSet('key',v)}
+let memKey='';
+function saveKey(v){v=(v||'').trim();if(!v)return;memKey=v;try{LS.set('key',v)}catch{}return kvSet('key',v)}
 let keySynced=null;
 function syncKey(){return keySynced||(keySynced=(async()=>{const l=LS.get('key',''),i=await kvGet('key');
-  if(!l&&i)LS.set('key',i);else if(l&&l!==i)await kvSet('key',l)})())}
+  if(i)memKey=i;if(!l&&i){try{LS.set('key',i)}catch{}}else if(l&&l!==i)await kvSet('key',l)})())}
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch{}
 async function tx(store,mode,fn){const d=await db();return new Promise((res,rej)=>{const t=d.transaction(store,mode);const s=t.objectStore(store);let out;const r=fn(s);if(r)r.onsuccess=()=>out=r.result;t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error)})}
 const put=(s,v)=>tx(s,'readwrite',o=>o.put(v));
@@ -70,7 +71,7 @@ async function addDoc(name,pages,label){const id=uid();const chunks=chunkPages(p
 
 /* ---------- Gemini ---------- */
 const DEFAULT_MODEL='gemini-3.5-flash-lite';
-const key=()=>LS.get('key',''), model=()=>LS.get('model',DEFAULT_MODEL)||DEFAULT_MODEL;
+const key=()=>LS.get('key','')||memKey, model=()=>LS.get('model',DEFAULT_MODEL)||DEFAULT_MODEL;
 async function gemini({system,contents,json=false,temp=.6}){
   if(!key())throw new Error('NOKEY');
   const body={contents,generationConfig:{temperature:temp,maxOutputTokens:1200}};
@@ -276,7 +277,7 @@ function history_back(){document.querySelector('#v-quiz [data-back]').click()}
 
 /* ---------- Einstellungen ---------- */
 function renderSettings(){$('#k-key').value=key();$('#k-model').value=model();$('#k-speak').checked=speakOn();$('#k-goal').value=String(LS.get('goal',10));loadVoices();$('#k-status').textContent=''}
-$('#b-savekey').onclick=()=>{saveKey($('#k-key').value.trim());try{$('#nokey').classList.toggle('hidden',!!key())}catch{};LS.set('model',$('#k-model').value.trim()||DEFAULT_MODEL);$('#k-status').textContent='Gespeichert ✓'};
+$('#b-savekey').onclick=()=>{if($('#k-key').value.trim())saveKey($('#k-key').value.trim());try{$('#nokey').classList.toggle('hidden',!!key())}catch{};LS.set('model',$('#k-model').value.trim()||DEFAULT_MODEL);$('#k-status').textContent='Gespeichert ✓'};
 $('#b-testkey').onclick=async()=>{$('#b-savekey').click();$('#k-status').textContent='Teste …';
   try{const t=await gemini({contents:[{role:'user',parts:[{text:'Sag in einem kurzen Satz auf Deutsch Hallo.'}]}]});$('#k-status').textContent='Funktioniert ✓ – '+t}catch(e){$('#k-status').textContent=errText(e)}};
 $('#k-speak').onchange=e=>LS.set('speak',e.target.checked);
@@ -290,3 +291,9 @@ if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWo
 window.__lehrerin={bm25,tokens,chunkPages};
 
 $('#home-savekey').onclick=()=>{const v=$('#home-key').value.trim();if(!v){$('#home-key').focus();return}saveKey(v);$('#home-key').value='';$('#nokey').classList.add('hidden');try{$('#k-key').value=v}catch(e){}alert('Gespeichert ✓ Du kannst jetzt chatten.')};
+
+async function pasteKey(inp,after){try{const t=(await navigator.clipboard.readText()||'').trim();if(!t){toast('Die Zwischenablage ist leer.');return}
+  inp.value=t;await saveKey(t);$('#nokey').classList.add('hidden');toast('Schlüssel eingefügt und gespeichert ✓');after&&after()}
+  catch(e){toast('Einfügen ging nicht – bitte lange ins Feld tippen und „Einsetzen“ wählen.',4000)}}
+$('#home-paste').onclick=()=>pasteKey($('#home-key'),()=>{$('#home-key').value=''});
+$('#k-paste').onclick=()=>pasteKey($('#k-key'));
