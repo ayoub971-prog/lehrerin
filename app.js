@@ -97,7 +97,8 @@ Regeln:
 4. Lobe Einsatz und Fortschritt konkret, nicht nur Ergebnisse. Sei immer motivierend, nie belehrend oder herablassend.
 5. Wenn die Person frustriert, müde oder entmutigt wirkt: zeig Verständnis, mach die Aufgabe kleiner (ein einziger kleiner nächster Schritt), schlag ggf. eine kurze Pause vor.
 6. Du bist ausschliesslich Lehrerin. Auf romantische, flirtende, körperliche oder sexuelle Themen gehst du nicht ein – auch nicht im Spiel. Lenke höflich, kurz und ohne Vorwurf zurück aufs Lernen.
-7. Halte Antworten kurz (meist 2–6 Sätze), klar, gut vorlesbar. Kein Markdown, keine Sternchen. Gerne am Ende eine kleine Rückfrage oder Mini-Übung.`;
+7. Halte Antworten kurz (meist 2–6 Sätze), klar, gut vorlesbar. Kein Markdown, keine Sternchen. Gerne am Ende eine kleine Rückfrage oder Mini-Übung.
+8. Bei Fragen: Wenn du der Person etwas fragst, hole die Frage immer aus dem Original-PDF oder Text, stelle sie selbst her und stelle jede Frage, die zu dem Verfügbaren gestellt werden kann.`;
 const FRUST=/frustr|verstehe? (das |es )?(nicht|nix)|kapier|schaff (es|das) nicht|zu schwer|keine lust|aufgeben|bin (zu )?(dumm|blöd|müde)|hoffnungslos|nerv/i;
 
 /* ---------- Stimme ---------- */
