@@ -63,6 +63,9 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 .flash .side{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .flash.back{border-color:var(--ok)}
 #b-mic.rec{background:#e07a72;border-color:#e07a72;color:#1a0f0e}
+[data-projekte]{padding:6px 10px;white-space:nowrap;color:var(--accent)}.top{flex-wrap:wrap}
+.fixbtn{display:block;margin-top:6px;padding:4px 8px;font-size:13px;font-weight:600;color:var(--muted)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:8;display:flex;align-items:flex-start;justify-content:center;padding:calc(env(safe-area-inset-top) + 30px) 12px 30px;overflow:auto}.modal>.card{width:100%;max-width:600px}
 .sumpart{padding:6px 0 10px;border-bottom:1px solid var(--line)}.sumpart:last-child{border:0}.sumpart.reading{background:#2a2216;border-radius:12px;padding:6px 10px}
 </style>
 </head>
@@ -70,7 +73,7 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 <div class="wrap">
 
 <section id="v-home">
-  <div class="top"><h1 class="sp">Lehrerin</h1><button class="ghost" id="b-settings" aria-label="Einstellungen">⚙︎ Einstellungen</button></div>
+  <div class="top"><h1 class="sp">Lehrerin</h1><button class="ghost small" data-projekte>🗂 Projekte</button><button class="ghost" id="b-settings" aria-label="Einstellungen">⚙︎ Einstellungen</button></div>
   <p class="muted" id="greet">Schön, dass du da bist!</p>
   <div class="card">
     <div class="stats">
@@ -90,7 +93,7 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 </section>
 
 <section id="v-project" class="hidden">
-  <div class="top"><button class="ghost" data-back>‹ Zurück</button><span class="sp"></span><button class="ghost" id="b-delproj">Löschen</button></div>
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button><button class="ghost small" data-projekte>🗂 Projekte</button><span class="sp"></span><button class="ghost" id="b-delproj">Löschen</button></div>
   <h1 id="p-title"></h1>
   <div class="row"><button class="primary big" id="b-learn">📚 Heute lernen <span class="badge" id="p-due">0</span></button></div>
   <div class="row" style="margin-top:10px"><button class="big" id="b-chat">💬 Mit der Lehrerin sprechen</button></div>
@@ -126,7 +129,7 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 </section>
 
 <section id="v-chat" class="hidden">
-  <div class="top"><button class="ghost" data-back>‹ Zurück</button><span class="sp"></span><button class="ghost small hidden" id="b-talk">🔁 Gespräch</button><button class="ghost small" id="b-voice">🔊 Stimme an</button><button class="ghost small" id="b-clear">Neu</button></div>
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button><button class="ghost small" data-projekte>🗂 Projekte</button><span class="sp"></span><button class="ghost small hidden" id="b-talk">🔁 Gespräch</button><button class="ghost small" id="b-voice">🔊 Stimme an</button><button class="ghost small" id="b-clear">Neu</button></div>
   <h2 id="c-title"></h2>
   <div id="chatlog"></div>
   <div class="composer"><div class="in">
@@ -137,13 +140,13 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 </section>
 
 <section id="v-quiz" class="hidden">
-  <div class="top"><button class="ghost" data-back>‹ Fertig</button><span class="sp"></span><button class="ghost small" id="q-voicemode">🎙 Mit Stimme</button><span class="small muted" id="q-timer"></span></div>
+  <div class="top"><button class="ghost" data-back>‹ Fertig</button><button class="ghost small" data-projekte>🗂 Projekte</button><span class="sp"></span><button class="ghost small" id="q-voicemode">🎙 Mit Stimme</button><span class="small muted" id="q-timer"></span></div>
   <div class="bar"><i id="q-bar" style="width:0"></i></div>
   <div class="card" id="q-box"></div>
 </section>
 
 <section id="v-book" class="hidden">
-  <div class="top"><button class="ghost" data-back>‹ Zurück</button></div>
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button><button class="ghost small" data-projekte>🗂 Projekte</button></div>
   <h1>Buch-Modus</h1>
   <div class="card">
     <p>Lade ein ganzes Buch hoch (PDF, .txt, Fotos oder Screenshots) oder füge den Text ein. Danach wählst du: Lernkartei oder Zusammenfassungen – immer mit Seitenangabe.</p>
@@ -163,14 +166,15 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 </section>
 
 <section id="v-flash" class="hidden">
-  <div class="top"><button class="ghost" data-back>‹ Zurück</button><span class="sp"></span><span class="small muted" id="fl-count"></span></div>
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button><button class="ghost small" data-projekte>🗂 Projekte</button><span class="sp"></span><span class="small muted" id="fl-count"></span></div>
   <div class="card flash" id="fl-card"></div>
+  <button class="ghost small fixbtn" id="fl-fix" style="margin:0 auto 10px">✏️ Korrigieren</button>
   <div class="row"><button id="fl-prev">‹ Zurück</button><button id="fl-read">🔊 Vorlesen</button><button id="fl-next">Weiter ›</button></div>
   <div class="row" style="margin-top:10px"><button class="primary big" id="fl-quiz">📚 Abfragen (3 Antworten)</button></div>
 </section>
 
 <section id="v-sum" class="hidden">
-  <div class="top"><button class="ghost" data-back>‹ Zurück</button></div>
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button><button class="ghost small" data-projekte>🗂 Projekte</button></div>
   <h1 id="sum-title"></h1><h2>Zusammenfassung</h2>
   <p class="small muted" id="sum-status"></p>
   <div class="row"><button class="primary" id="sum-play">▶ Vorlesen</button><button id="sum-restart">⏮ Von vorn</button></div>
@@ -179,7 +183,7 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 </section>
 
 <section id="v-settings" class="hidden">
-  <div class="top"><button class="ghost" data-back>‹ Zurück</button></div>
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button><button class="ghost small" data-projekte>🗂 Projekte</button></div>
   <h1>Einstellungen</h1>
   <div class="card">
     <h3>Gemini-Schlüssel (gratis)</h3>

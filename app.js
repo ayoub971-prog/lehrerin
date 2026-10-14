@@ -104,7 +104,29 @@ Regeln:
 11. Wiederholung nach dem Anki-Prinzip: Eine richtig beantwortete Frage kommt erst nach wachsendem Abstand wieder (1 Tag, 3 Tage, 1 Woche, 2 Wochen, 1 Monat, danach jeweils doppelt so lang). Eine falsch beantwortete Frage beginnt wieder von vorne.
 12. Jede Frage, die du stellst, beginnt mit einem Emoji, das zum Inhalt der Frage passt.
 13. Kennzeichne die Wichtigkeit des Inhalts direkt nach dem Emoji mit einem farbigen Punkt: 🔴 sehr wichtig, 🟡 wichtig, 🔵 normal.
-14. Wenn die Person Lernkarten für Anki möchte (zum Beispiel „das will ich als Anki importieren“), gib die relevanten Inhalte als Anki-Importtext aus: in der ersten Zeile „#separator:Semicolon“, danach pro Zeile genau eine Karte im Format Frage;Antwort, ohne weitere Erklärungen dazwischen, alles nur aus dem Material.`;
+14. Wenn die Person Lernkarten für Anki möchte (zum Beispiel „das will ich als Anki importieren“), gib die relevanten Inhalte als Anki-Importtext aus: in der ersten Zeile „#separator:Semicolon“, danach pro Zeile genau eine Karte im Format Frage;Antwort, ohne weitere Erklärungen dazwischen, alles nur aus dem Material.
+15. Prüfe vor jeder Aussage mehrfach, ob sie wörtlich oder sinngemäss genau durch das MATERIAL gedeckt ist. Was nicht gedeckt ist, lässt du weg oder sagst: „Das steht nicht in deinem Material.“ Lieber eine kurze, sichere Antwort als eine lange, unsichere.
+16. Wenn du eine Antwort der Person beurteilst: Zitiere zuerst die passende Originalstelle wörtlich mit Stellenangabe, vergleiche die Antwort Punkt für Punkt mehrfach mit diesem Originaltext und sag erst danach klar „richtig“ oder „nicht richtig“. Bist du unsicher, sag das ehrlich.
+17. Wenn unten KORREKTUREN DER LERNENDEN PERSON stehen, haben sie Vorrang vor deinen früheren Aussagen, sofern sie durch das Material gedeckt sind. Widerspricht eine Korrektur dem Material, sag das freundlich und zeig die Originalstelle.
+18. Wenn die Person dich korrigiert, nimm es dankbar an, prüfe es am Material und sag klar, ob die Korrektur stimmt. Wiederhole einen Fehler, der korrigiert wurde, nie wieder.`;
+const corrText=p=>{const c=(p&&p.corrections||[]).slice(-20);return c.length?'\n\nKORREKTUREN DER LERNENDEN PERSON (haben Vorrang, sofern durch das Material gedeckt):\n'+c.map(x=>'- '+x.text+(x.about?' (bezieht sich auf: „'+x.about.slice(0,160)+'“)':'')).join('\n'):''};
+/* Prüf-Durchgang: ein zweiter KI-Aufruf prüft jede Aussage am Material (spart Kontingent: 1 statt 5 Aufrufe) */
+function verifyPrompt({draft,question,lastBot,mat,corr}){return `Du bist eine strenge Prüferin. Prüfe den ENTWURF einer Lehrerin Satz für Satz gegen das MATERIAL. Prüfe jede fachliche Aussage mehrfach: Steht sie wirklich wörtlich oder sinngemäss genau so im MATERIAL?
+- Nicht gedeckte Aussagen entfernst du. Falsche Aussagen ersetzt du durch das, was im Material steht, mit Stellenangabe in Klammern.
+- Falsche oder fehlende Stellenangaben korrigierst du.
+- Beurteilt der Entwurf eine Antwort der lernenden Person („richtig“ / „nicht richtig“), vergleichst du die Antwort selbst mit der wörtlich zitierten Originalstelle und korrigierst das Urteil, falls nötig. Die Originalstelle muss wörtlich zitiert sein.
+- Bleibt keine gedeckte fachliche Aussage übrig, schreib freundlich: „Das steht nicht in deinem Material.“ und schlag vor, was man im Material anschauen könnte.
+- Lob, Ermutigung, Emojis, Rückfragen, Ton und Länge bleiben, wie sie sind. Deutsch, Schweizer Rechtschreibung („ss“), kein Markdown.
+- Korrekturen der lernenden Person haben Vorrang, sofern sie durch das Material gedeckt sind.
+Gib JSON zurück: {"geaendert":true oder false,"antwort":"die geprüfte, endgültige Antwort"}${corr}
+${lastBot?'\nLETZTE NACHRICHT DER LEHRERIN:\n'+lastBot+'\n':''}
+NACHRICHT DER PERSON:\n${question}
+
+MATERIAL:\n${mat}
+
+ENTWURF:\n${draft}`}
+function parseVerify(raw,draft){try{let o=JSON.parse(String(raw).replace(/^```(json)?|```$/g,''));if(Array.isArray(o))o=o[0];const a=o&&typeof o.antwort==='string'?o.antwort.trim():'';return a||draft}catch{return draft}}
+async function verifyAnswer(args){try{return parseVerify(await gemini({contents:[{role:'user',parts:[{text:verifyPrompt(args)}]}],json:true,temp:0,maxTokens:1500}),args.draft)}catch(e){console.warn('Prüfung',e);return args.draft}}
 const FRUST=/frustr|verstehe? (das |es )?(nicht|nix)|kapier|schaff (es|das) nicht|zu schwer|keine lust|aufgeben|bin (zu )?(dumm|blöd|müde)|hoffnungslos|nerv/i;
 
 /* ---------- Stimme ---------- */
@@ -184,14 +206,15 @@ async function generateCards(n=5){const chunks=await byP('chunks',cur.id);if(!ch
   const used=new Set(LS.get('used.'+cur.id,[]));let pool=chunks.filter(c=>!used.has(c.id));if(pool.length<3){pool=chunks;used.clear()}
   const start=Math.floor(Math.random()*Math.max(1,pool.length-3));const pick=pool.slice(start,start+3);
   const mat=pick.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n');
-  const prompt=`Erstelle ${n} kurze Lernkarten auf Deutsch (Schweizer Rechtschreibung) NUR aus diesem Material. Jede Karte prüft genau einen wichtigen Fakt.
+  const prompt=`Erstelle höchstens ${n} kurze Lernkarten auf Deutsch (Schweizer Rechtschreibung) NUR aus diesem Material. Jede Karte prüft genau einen wichtigen Fakt.
+${CARD_RULES}
 Zu jeder Frage gibt es genau 2 falsche, aber plausible Antworten (aus demselben Themengebiet des Materials, ähnlich lang wie die richtige, eindeutig falsch).
-Gib JSON zurück: [{"fakt":"der Fakt als 1-2 klare Sätze zum Einprägen","frage":"eine kurze Frage dazu","antwort":"kurze richtige Antwort","falsch":["falsche Antwort 1","falsche Antwort 2"],"erklaerung":"1 kurzer Satz, warum die richtige Antwort stimmt","stelle":"die Stellenangabe genau wie in eckigen Klammern"}]
+Gib JSON zurück: [{"typ":"Wissen|Verstehen|Unterscheiden|Anwenden|Fehler erkennen","fakt":"der Fakt als 1-2 klare Sätze zum Einprägen","frage":"eine kurze Frage dazu","antwort":"kurze richtige Antwort","falsch":["falsche Antwort 1","falsche Antwort 2"],"erklaerung":"1 kurzer Satz, warum die richtige Antwort stimmt","stelle":"die Stellenangabe genau wie in eckigen Klammern"}]${corrText(cur)}
 MATERIAL:\n${mat}`;
   const raw=await gemini({contents:[{role:'user',parts:[{text:prompt}]}],json:true,temp:.4});
   let arr;try{arr=JSON.parse(raw.replace(/^```(json)?|```$/g,''))}catch{throw new Error('Antwort war kein gültiges JSON')}
   if(!Array.isArray(arr))arr=arr.karten||arr.cards||[];
-  const cards=arr.filter(x=>x.frage&&x.antwort).slice(0,n).map(x=>({id:uid(),projectId:cur.id,q:x.frage,a:x.antwort,fact:x.fakt||x.antwort,dis:Array.isArray(x.falsch||x.distractors)?(x.falsch||x.distractors).filter(Boolean).slice(0,2):undefined,expl:x.erklaerung||x.explanation||'',src:x.stelle||ref(pick[0]),level:0,due:0,seen:false,created:Date.now()}));
+  const cards=arr.filter(x=>x.frage&&x.antwort).slice(0,n).map(x=>({id:uid(),projectId:cur.id,q:x.frage,a:x.antwort,fact:x.fakt||x.antwort,dis:Array.isArray(x.falsch||x.distractors)?(x.falsch||x.distractors).filter(Boolean).slice(0,2):undefined,expl:x.erklaerung||x.explanation||'',type:x.typ||'',src:x.stelle||ref(pick[0]),level:0,due:0,seen:false,created:Date.now()}));
   await putMany('cards',cards);pick.forEach(c=>used.add(c.id));LS.set('used.'+cur.id,[...used]);return cards.length}
 $('#b-gen').onclick=async()=>{const b=$('#b-gen');b.disabled=true;b.textContent='Die Lehrerin bereitet Fragen vor …';
   try{const k=await generateCards(5);if(k)toast(`${k} neue Karten ✓`)}catch(e){toast(errText(e),5000)}
@@ -203,21 +226,25 @@ $('#b-chat').onclick=()=>openChat();
 async function openChat(){show('chat');$('#c-title').textContent=cur.name;voiceBtn();
   const msgs=(await byP('messages',cur.id)).sort((a,b)=>a.ts-b.ts);history=msgs.slice(-12);$('#chatlog').innerHTML='';
   if(!msgs.length)addMsg('bot',`Hallo! Schön, dass du da bist. 😊 Ich helfe dir mit „${cur.name}“. Frag mich einfach, was du wissen möchtest – ich antworte nur aus deinem Material und sag dir, auf welcher Seite es steht.`,false);
-  else msgs.slice(-30).forEach(m=>addMsg(m.role,m.text,false));
+  else msgs.slice(-30).forEach(m=>addMsg(m.role,m.text,false,true));
   const any=!!SRC||canRec();$('#b-mic').classList.toggle('hidden',!any);$('#b-talk').classList.toggle('hidden',!any);talkMode=false;talkBtn();
   $('#c-hint').textContent=any?'':'Tipp: Zum Sprechen das 🎤 auf der iPhone-Tastatur antippen.';
   setTimeout(()=>window.scrollTo(0,document.body.scrollHeight),50)}
-function addMsg(role,text,save=true){const d=document.createElement('div');d.className='msg '+role;d.innerHTML=(role==='bot'?'<div class="who">Lehrerin</div>':'')+esc(text);$('#chatlog').append(d);
+function addMsg(role,text,save=true,fix=save){const d=document.createElement('div');d.className='msg '+role;d.innerHTML=(role==='bot'?'<div class="who">Lehrerin</div>':'')+esc(text);
+  if(role==='bot'&&fix){const b=document.createElement('button');b.className='ghost small fixbtn';b.textContent='✏️ Korrigieren';b.onclick=()=>fixChat(text);d.append(b)}$('#chatlog').append(d);
   window.scrollTo(0,document.body.scrollHeight);if(save){const m={id:uid(),projectId:cur.id,role,text,ts:Date.now()};put('messages',m);history.push(m);history=history.slice(-12)}return d}
 async function send(){const t=$('#c-in').value.trim();if(!t)return;$('#c-in').value='';addMsg('user',t);
   const typing=addMsg('bot','schreibt …',false);typing.classList.add('typing');$('#b-send').disabled=true;
   try{const chunks=await byP('chunks',cur.id);const ctxQ=t+' '+(history.filter(m=>m.role==='user').slice(-2,-1)[0]?.text||'');
     const top=bm25(chunks,ctxQ,5);
     const mat=top.length?top.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n'):(chunks.length?'(Zu dieser Frage wurde im Material nichts Passendes gefunden.)':'(Es wurde noch kein Material hochgeladen.)');
-    let sys=PERSONA+`\n\nPROJEKT: ${cur.name}\nMATERIAL (Auszüge, mit Stellenangabe in eckigen Klammern):\n${mat}`;
+    let sys=PERSONA+`\n\nPROJEKT: ${cur.name}\nMATERIAL (Auszüge, mit Stellenangabe in eckigen Klammern):\n${mat}`+corrText(cur);
     if(FRUST.test(t))sys+='\n\nHINWEIS: Die Person wirkt gerade frustriert. Sei besonders verständnisvoll und mach den nächsten Schritt sehr klein.';
     const contents=history.slice(0,-1).slice(-8).map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]}));contents.push({role:'user',parts:[{text:t}]});
-    const ans=await gemini({system:sys,contents});typing.remove();addMsg('bot',ans);if(talkMode)speak(ans,true,()=>{if(talkMode&&!$('#v-chat').classList.contains('hidden'))setTimeout(startMic,350)});else speak(ans)}
+    let ans=await gemini({system:sys,contents});
+    if(top.length){typing.lastChild.textContent='prüft die Antwort am Material …';const lastBot=[...history].reverse().find(m=>m.role==='bot')?.text||'';
+      ans=await verifyAnswer({draft:ans,question:t,lastBot,mat,corr:corrText(cur)})}
+    typing.remove();addMsg('bot',ans);if(talkMode)speak(ans,true,()=>{if(talkMode&&!$('#v-chat').classList.contains('hidden'))setTimeout(startMic,350)});else speak(ans)}
   catch(e){typing.remove();addMsg('bot',errText(e),false)}
   $('#b-send').disabled=false}
 $('#b-send').onclick=send;
@@ -303,8 +330,8 @@ function step(){const box=$('#q-box');$('#q-bar').style.width=(S.i/S.queue.lengt
   if(c.dis&&c.dis.length>=2)return mc(c,box);
   box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p><p class="small muted">Überleg kurz in Ruhe – oder sag die Antwort laut.</p><button class="primary big" id="q-show">Antwort zeigen</button>`;
   speak(c.q);$('#q-show').onclick=()=>{
-    box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p><p class="fact">${esc(c.a)}</p><p class="src">${esc(c.src)}</p><div class="row"><button id="q-no">Noch nicht sicher</button><button class="primary" id="q-yes">Gewusst ✓</button></div>`;
-    $('#q-yes').onclick=()=>grade(c,true);$('#q-no').onclick=()=>grade(c,false)}}
+    box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p><p class="fact">${esc(c.a)}</p><p class="src">${esc(c.src)}</p><button class="ghost small fixbtn" id="q-fix">✏️ Korrigieren</button><div class="row"><button id="q-no">Noch nicht sicher</button><button class="primary" id="q-yes">Gewusst ✓</button></div>`;
+    $('#q-fix').onclick=()=>fixCard(c,()=>{box.querySelector('.quizq').textContent=c.q;box.querySelector('.fact').textContent=c.a});$('#q-yes').onclick=()=>grade(c,true);$('#q-no').onclick=()=>grade(c,false)}}
 async function ensureDistractors(c){try{
   const prompt=`Hier ist eine Lernkarte. Erfinde genau 2 falsche, aber plausible Antworten aus demselben Themengebiet (ähnlich lang wie die richtige, eindeutig falsch) und 1 kurzen Satz Erklärung, warum die richtige stimmt. Deutsch, Schweizer Rechtschreibung.
 FRAGE: ${c.q}\nRICHTIGE ANTWORT: ${c.a}\nFAKT: ${c.fact}
@@ -343,7 +370,8 @@ function mc(c,box){if(!c._opts)c._opts=[c.a,...c.dis.slice(0,2)].map(t=>({t,ok:t
     box.querySelectorAll('.opt').forEach((bb,i)=>{bb.disabled=true;if(o[i].ok){bb.classList.add('right');bb.insertAdjacentHTML('beforeend','<span class="lbl">✓ Richtige Antwort</span>')}});
     if(!ch.ok){b.classList.add('wrong');b.insertAdjacentHTML('beforeend','<span class="lbl">Deine Wahl</span>')}
     const warm=ch.ok?PRAISE[Math.floor(Math.random()*PRAISE.length)]:COMFORT[Math.floor(Math.random()*COMFORT.length)];const ri=o.findIndex(x=>x.ok);
-    $('#q-fb').innerHTML=`<p class="fb ${ch.ok?'ok':'no'}">${ch.ok?'Ja, richtig! ':'Nein, leider falsch. '}${esc(warm)}</p><p class="fact">${esc(c.expl||c.fact)}</p><p class="src">📖 ${esc(c.src)}</p><button class="primary big" id="q-weiter">Weiter →</button>`;
+    $('#q-fb').innerHTML=`<p class="fb ${ch.ok?'ok':'no'}">${ch.ok?'Ja, richtig! ':'Nein, leider falsch. '}${esc(warm)}</p><p class="fact">${esc(c.expl||c.fact)}</p><p class="src">📖 ${esc(c.src)}</p><button class="ghost small fixbtn" id="q-fix">✏️ Korrigieren</button><button class="primary big" id="q-weiter">Weiter →</button>`;
+    $('#q-fix').onclick=()=>{stopSpeak();S.halt=true;fixCard(c,()=>{$('#q-fb .fact').textContent=c.expl||c.fact;$('#q-fb .src').textContent='📖 '+c.src})};
     after=ch.ok?`Ja, richtig! ${c.expl||c.fact}`:`Nein, leider falsch, richtig ist ${ABC[ri]}: ${c.a}. ${c.expl||c.fact}`;
     let went=false;const go=()=>{if(went)return;went=true;stopSpeak();delete box.dataset.done;grade(c,ch.ok,true)};
     speak(after,true,qVoice()?()=>setTimeout(()=>{if(S&&!S.halt&&S.queue[S.i]===card)go()},1200):null);
@@ -437,14 +465,23 @@ $('#bk-jobs').addEventListener('click',async e=>{const btn=e.target.closest('[da
   if(j.state==='run'&&bookBusy===cur.id){j.state='pause'}else{j.state='run';j.err=''}await put('projects',cur);renderBook();processBook()});
 async function startJob(k){migrate(cur);if(!cur.book.jobs[k])cur.book.jobs[k]={next:0,state:'run',made:0,err:''};await put('projects',cur);renderBook();processBook()}
 $('#bk-mk-cards').onclick=()=>startJob('cards');$('#bk-mk-sum').onclick=()=>startJob('sum');
-const CARD_JSON='{"fakt":"der Punkt in 1-2 klaren Sätzen","frage":"kurze Frage","antwort":"kurze richtige Antwort","falsch":["...","..."],"erklaerung":"1 kurzer Satz","stelle":"Stellenangabe genau wie in eckigen Klammern"}';
-const RULES='Regeln: Alles muss AUSSCHLIESSLICH aus diesem Text stammen, nichts erfinden, kein Allgemeinwissen. Deutsch, Schweizer Rechtschreibung („ss“ statt „ß“). Jede Frage prüft genau einen wichtigen Punkt und hat genau 2 falsche, aber plausible Antworten (ähnlich lang, eindeutig falsch).';
-function toCards(arr,p,chunks){return (arr||[]).filter(x=>x&&x.frage&&x.antwort).slice(0,6).map(x=>({id:uid(),projectId:p.id,q:x.frage,a:x.antwort,fact:x.fakt||x.antwort,dis:Array.isArray(x.falsch)?x.falsch.filter(Boolean).slice(0,2):undefined,expl:x.erklaerung||'',src:x.stelle||(chunks[0]?ref(chunks[0]):p.name),level:0,due:0,seen:false,created:Date.now(),book:true}))}
+const CARD_RULES=`Regeln für gute Karten (nur aus dem Material, keine Recherche, kein Allgemeinwissen):
+- Jede Karte hat genau eine zentrale Frage.
+- Kurze, klare, einfache Sätze in leichtem Deutsch.
+- Fachbegriffe werden in der Antwort oder im Fakt kurz und einfach erklärt.
+- Keine Fangfragen, keine doppelten Verneinungen, keine mehrdeutigen Fragen.
+- Die Bedeutung des Materials darf nicht verändert werden. Nichts dazuerfinden.
+- Kartentyp passend zum Inhalt wählen und mischen: Wissen (Fakt abrufen), Verstehen (warum/wie), Unterscheiden (Unterschied zwischen zwei Begriffen), Anwenden (kurzer Fall aus dem Material), Fehler erkennen (welche Aussage ist falsch).
+- Lieber weniger, aber hochwertige Karten.
+- Interne Qualitätskontrolle vor der Ausgabe: Prüfe jede Karte nochmals am Material. Streiche Karten, die unklar, doppelt, zu ähnlich, unwichtig oder nicht genau durch das Material gedeckt sind. Gib nur die geprüften Karten aus.`;
+const CARD_JSON='{"typ":"Wissen|Verstehen|Unterscheiden|Anwenden|Fehler erkennen","fakt":"der Punkt in 1-2 klaren Sätzen","frage":"kurze Frage","antwort":"kurze richtige Antwort","falsch":["...","..."],"erklaerung":"1 kurzer Satz","stelle":"Stellenangabe genau wie in eckigen Klammern"}';
+const RULES='Regeln: Alles muss AUSSCHLIESSLICH aus diesem Text stammen, nichts erfinden, kein Allgemeinwissen. Deutsch, Schweizer Rechtschreibung („ss“ statt „ß“). Jede Frage prüft genau einen wichtigen Punkt und hat genau 2 falsche, aber plausible Antworten (ähnlich lang, eindeutig falsch).\n'+CARD_RULES;
+function toCards(arr,p,chunks){return (arr||[]).filter(x=>x&&x.frage&&x.antwort).slice(0,6).map(x=>({id:uid(),projectId:p.id,q:x.frage,a:x.antwort,fact:x.fakt||x.antwort,dis:Array.isArray(x.falsch)?x.falsch.filter(Boolean).slice(0,2):undefined,expl:x.erklaerung||'',type:x.typ||'',src:x.stelle||(chunks[0]?ref(chunks[0]):p.name),level:0,due:0,seen:false,created:Date.now(),book:true}))}
 const parseJ=raw=>{try{return JSON.parse(raw.replace(/^```(json)?|```$/g,''))}catch{throw new Error('Antwort war kein gültiges JSON')}};
 async function segChunks(p,seg){return (await byP('chunks',p.id)).filter(c=>seg.includes(c.id)).sort((a,b)=>a.order-b.order)}
 async function bookCards(p,seg){const chunks=await segChunks(p,seg);const mat=chunks.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n');
-  const prompt=`Du bist eine Lehrerin. Unten ist ein Teil von „${p.name}“. Zieh NUR die allerwichtigsten Inhalte heraus (Kernaussagen, zentrale Begriffe, wichtige Zusammenhänge – keine Nebensächlichkeiten) und mach daraus 3 bis 6 Karteikarten.
-${RULES}
+  const prompt=`Du bist eine Lehrerin. Unten ist ein Teil von „${p.name}“. Zieh NUR die allerwichtigsten Inhalte heraus (Kernaussagen, zentrale Begriffe, wichtige Zusammenhänge – keine Nebensächlichkeiten) und mach daraus höchstens 6 Karteikarten (lieber weniger, aber gute).
+${RULES}${corrText(p)}
 Gib JSON zurück: [${CARD_JSON}]
 Wenn der Text nichts Wichtiges enthält (z. B. Inhaltsverzeichnis, Impressum), gib [] zurück.
 TEXT:\n${mat}`;
@@ -489,12 +526,13 @@ $('#sum-restart').onclick=()=>{SUM.i=0;LS.set('sumpos.'+cur.id,0);SUM.playing=tr
 $('#sum-repeat').onclick=()=>{SUM.playing=false;stopSpeak();stack.pop();startSession()};
 // Karteikarten
 let FL={cards:[],i:0,back:false};
-$('#bk-cards').onclick=async()=>{const cards=(await byP('cards',cur.id)).sort((a,b)=>a.created-b.created);if(!cards.length){toast('Noch keine Karteikarten – einen Moment, die Lehrerin liest noch.');return}
-  FL={cards,i:0,back:false};show('flash');flash()};
+$('#bk-cards').onclick=()=>openFlash();
+async function openFlash(){const cards=(await byP('cards',cur.id)).sort((a,b)=>a.created-b.created);if(!cards.length){toast('Noch keine Karteikarten – einen Moment, die Lehrerin liest noch.');return}
+  FL={cards,i:0,back:false};show('flash');flash()}
 function flash(){const c=FL.cards[FL.i];$('#fl-count').textContent=`Karte ${FL.i+1} von ${FL.cards.length}`;const el=$('#fl-card');el.classList.toggle('back',FL.back);
   el.innerHTML=FL.back?`<p class="side">Antwort</p><p class="quizq" style="color:var(--ok)">${esc(c.a)}</p><p class="fact" style="text-align:left">${esc(c.fact)}</p><p class="src">📖 ${esc(c.src)}</p><p class="small muted">Tippen für die Frage</p>`:
     `<p class="side">Frage</p><p class="quizq">${esc(c.q)}</p><p class="small muted">Tippen für die Antwort</p>`;
-  $('#fl-prev').disabled=FL.i===0;$('#fl-next').disabled=FL.i>=FL.cards.length-1;speak(FL.back?c.a+'. '+c.fact:c.q)}
+  $('#fl-fix').onclick=()=>fixCard(c,flash);$('#fl-prev').disabled=FL.i===0;$('#fl-next').disabled=FL.i>=FL.cards.length-1;speak(FL.back?c.a+'. '+c.fact:c.q)}
 $('#fl-card').onclick=()=>{FL.back=!FL.back;flash()};
 $('#fl-prev').onclick=()=>{if(FL.i>0){FL.i--;FL.back=false;flash()}};
 $('#fl-next').onclick=()=>{if(FL.i<FL.cards.length-1){FL.i++;FL.back=false;flash()}};
@@ -504,10 +542,50 @@ $('#fl-quiz').onclick=()=>{stack.pop();startSession()};
 async function resumeBooks(){const ps=(await all('projects')).map(migrate);const p=ps.find(p=>p.book&&Object.values(p.book.jobs).some(j=>j.state==='run'&&j.next<p.book.segs.length));
   if(p&&key()){const was=cur;cur=p;processBook();cur=was}}
 
+/* ---------- Korrigieren & Projekte ---------- */
+function modal(html){document.querySelectorAll('.modal').forEach(x=>x.remove());const o=document.createElement('div');o.className='modal';o.innerHTML=`<div class="card">${html}</div>`;document.body.append(o);
+  o.addEventListener('click',e=>{if(e.target===o||e.target.closest('[data-mclose]')){try{stopMic()}catch{}o.remove()}});return o}
+function micInto(o,ta,hint){const b=o.querySelector('[data-mic]');if(!b)return;if(!canRec()&&!SRC){b.classList.add('hidden');return}
+  b.onclick=()=>{const h=o.querySelector(hint);if(mr){stopMic();return}stopSpeak();
+    if(canRec()){h.textContent='Ich höre zu … (zum Beenden 🎤 antippen)';startRecorder((txt,err)=>{if(err){h.textContent=err;return}h.textContent=txt?'':'Ich habe nichts verstanden.';if(txt){const el=o.querySelector(typeof ta==='function'?ta():ta);el.value=((el.value||'')+' '+txt).trim()}})}
+    else{const r=new SRC();r.lang='de-CH';r.onresult=e=>{const el=o.querySelector(typeof ta==='function'?ta():ta);el.value=((el.value||'')+' '+e.results[0][0].transcript).trim()};r.onend=()=>h.textContent='';h.textContent='Ich höre zu …';r.start()}}}
+function fixChat(text){const list=(cur.corrections||[]);
+  const o=modal(`<h3>✏️ Lehrerin korrigieren</h3><p class="small muted">Die Lehrerin hat gesagt:</p><p class="fact small" style="max-height:140px;overflow:auto">${esc(text)}</p>
+  <label class="small muted">Was ist falsch, und was ist richtig? (tippen oder sprechen)</label><textarea id="fx-note" placeholder="z. B. Nicht die Ribosomen, sondern die Mitochondrien sind die Kraftwerke der Zelle (Seite 3)."></textarea>
+  <p class="small muted" id="fx-hint"></p><div class="row" style="margin-top:8px"><button data-mic>🎤 Sprechen</button><button class="primary" id="fx-save">Speichern</button></div>
+  ${list.length?`<p class="small muted" style="margin-top:14px">Bisherige Korrekturen in diesem Projekt:</p><div class="list">${list.map((x,i)=>`<div class="item small"><span class="name" style="font-weight:400">${esc(x.text)}</span><button class="ghost small" data-delfix="${i}">✕</button></div>`).join('')}</div>`:''}
+  <button class="ghost small" data-mclose style="margin-top:8px">Abbrechen</button>`);
+  micInto(o,'#fx-note','#fx-hint');setTimeout(()=>o.querySelector('#fx-note').focus(),50);
+  o.querySelectorAll('[data-delfix]').forEach(b=>b.onclick=async()=>{cur.corrections.splice(+b.dataset.delfix,1);await put('projects',cur);fixChat(text)});
+  o.querySelector('#fx-save').onclick=async()=>{const v=o.querySelector('#fx-note').value.trim();if(!v)return o.querySelector('#fx-note').focus();
+    cur.corrections=[...(cur.corrections||[]),{text:v,about:text.slice(0,300),ts:Date.now()}].slice(-30);await put('projects',cur);o.remove();
+    toast('Danke! Die Lehrerin beachtet deine Korrektur ab jetzt – sofern sie im Material steht. ✓',3500)}}
+function fixCard(c,after){const o=modal(`<h3>✏️ Karte korrigieren</h3>
+  <label class="small muted">Frage</label><textarea id="fx-q" style="min-height:70px">${esc(c.q)}</textarea>
+  <label class="small muted" style="display:block;margin-top:8px">Antwort</label><textarea id="fx-a" style="min-height:60px">${esc(c.a)}</textarea>
+  <label class="small muted" style="display:block;margin-top:8px">Merksatz / Erklärung</label><textarea id="fx-f" style="min-height:70px">${esc(c.expl||c.fact)}</textarea>
+  <p class="small muted" id="fx-hint">Tipp: Feld antippen, dann 🎤 Sprechen – der Text wird dort angehängt.</p>
+  <div class="row" style="margin-top:8px"><button data-mic>🎤 Sprechen</button><button class="primary" id="fx-save">Speichern</button></div><button class="ghost small" data-mclose style="margin-top:8px">Abbrechen</button>`);
+  let last='#fx-a';o.querySelectorAll('textarea').forEach(t=>t.addEventListener('focus',()=>last='#'+t.id));
+  micInto(o,()=>last,'#fx-hint');
+  o.querySelector('#fx-save').onclick=async()=>{const q=o.querySelector('#fx-q').value.trim(),a=o.querySelector('#fx-a').value.trim(),f=o.querySelector('#fx-f').value.trim();if(!q||!a){toast('Frage und Antwort dürfen nicht leer sein.');return}
+    const ansChanged=a!==c.a;c.q=q;c.a=a;if(c.expl)c.expl=f;else c.fact=f;if(c.expl&&!c.fact)c.fact=f;
+    if(ansChanged&&c.dis)c.dis=c.dis.filter(x=>x.trim()!==a);c.edited=Date.now();
+    const st={...c};for(const k of ['_factShown','_opts','_noMc','_retry'])delete st[k];await put('cards',st);o.remove();toast('Karte gespeichert ✓');after&&after()}}
+async function openProjects(){const [ps,cards]=await Promise.all([all('projects'),all('cards')]);const now=Date.now();
+  const o=modal(`<div class="top"><h2 class="sp" style="margin:0">🗂 Projekte</h2><button class="ghost small" data-mclose>✕</button></div>
+  <div class="list">${ps.length?ps.sort((a,b)=>b.created-a.created).map(p=>{const pc=cards.filter(c=>c.projectId===p.id),d=pc.filter(c=>c.seen&&c.due<=now).length,n=pc.filter(c=>!c.seen).length;
+    return `<div class="item" style="flex-wrap:wrap"><span class="name" data-pj="${p.id}" data-act="open" style="cursor:pointer">${p.type==='book'?'📖':'📁'} ${esc(p.name)}<br><span class="small muted" style="font-weight:400">${pc.length} ${pc.length===1?'Karte':'Karten'} · ${d} fällig · ${n} neu</span></span>
+    <button class="primary small" data-pj="${p.id}" data-act="learn">📚 Lernen</button>${pc.length?`<button class="small" data-pj="${p.id}" data-act="cards">🃏 Karten</button>`:''}</div>`}).join(''):'<p class="muted small">Noch kein Projekt gespeichert.</p>'}</div>`);
+  o.querySelectorAll('[data-pj]').forEach(el=>el.onclick=async()=>{const id=el.dataset.pj,act=el.dataset.act;o.remove();endSession();
+    cur=(bookObj&&bookObj.id===id)?bookObj:migrate((await all('projects')).find(p=>p.id===id));stack=['home','project'];show('project',false);renderProject();
+    if(act==='learn')startSession();else if(act==='cards')openFlash()})}
+document.addEventListener('click',e=>{if(e.target.closest('[data-projekte]'))openProjects()});
+
 /* ---------- Start ---------- */
 renderHome().then(()=>syncKey()).then(resumeBooks);
 if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js');
-window.__lehrerin={bm25,tokens,chunkPages};
+window.__lehrerin={bm25,tokens,chunkPages,verifyPrompt,parseVerify,corrText,PERSONA,CARD_RULES};
 
 $('#home-savekey').onclick=()=>{const v=$('#home-key').value.trim();if(!v){$('#home-key').focus();return}saveKey(v);$('#home-key').value='';$('#nokey').classList.add('hidden');try{$('#k-key').value=v}catch(e){}alert('Gespeichert ✓ Du kannst jetzt chatten.')};
 
