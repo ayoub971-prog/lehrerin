@@ -62,6 +62,7 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 .flash{min-height:260px;display:flex;flex-direction:column;justify-content:center;text-align:center;cursor:pointer}
 .flash .side{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .flash.back{border-color:var(--ok)}
+#b-mic.rec{background:#e07a72;border-color:#e07a72;color:#1a0f0e}
 </style>
 </head>
 <body>
@@ -121,7 +122,7 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 </section>
 
 <section id="v-chat" class="hidden">
-  <div class="top"><button class="ghost" data-back>‹ Zurück</button><span class="sp"></span><button class="ghost small" id="b-voice">🔊 Stimme an</button><button class="ghost small" id="b-clear">Neu</button></div>
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button><span class="sp"></span><button class="ghost small hidden" id="b-talk">🔁 Gespräch</button><button class="ghost small" id="b-voice">🔊 Stimme an</button><button class="ghost small" id="b-clear">Neu</button></div>
   <h2 id="c-title"></h2>
   <div id="chatlog"></div>
   <div class="composer"><div class="in">
@@ -132,7 +133,7 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 </section>
 
 <section id="v-quiz" class="hidden">
-  <div class="top"><button class="ghost" data-back>‹ Fertig</button><span class="sp"></span><span class="small muted" id="q-timer"></span></div>
+  <div class="top"><button class="ghost" data-back>‹ Fertig</button><span class="sp"></span><button class="ghost small" id="q-voicemode">🎙 Mit Stimme</button><span class="small muted" id="q-timer"></span></div>
   <div class="bar"><i id="q-bar" style="width:0"></i></div>
   <div class="card" id="q-box"></div>
 </section>

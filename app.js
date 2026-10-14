@@ -35,7 +35,7 @@ async function delByP(s,pid){const items=await byP(s,pid);await tx(s,'readwrite'
 /* ---------- Navigation ---------- */
 let cur=null; // aktuelles Projekt
 const views=['home','project','chat','quiz','settings','book','flash'];let stack=['home'];
-function show(v,push=true){views.forEach(x=>$('#v-'+x).classList.toggle('hidden',x!==v));if(push&&stack.at(-1)!==v)stack.push(v);window.scrollTo(0,0);stopSpeak()}
+function show(v,push=true){views.forEach(x=>$('#v-'+x).classList.toggle('hidden',x!==v));if(push&&stack.at(-1)!==v)stack.push(v);window.scrollTo(0,0);stopSpeak();if(v!=='chat'&&typeof talkMode!=='undefined'&&(talkMode||rec||mr)){talkMode=false;try{stopMic()}catch{}}}
 document.addEventListener('click',e=>{if(e.target.closest('[data-back]')){if(stack.at(-1)==='quiz')endSession();stack.pop();const v=stack.at(-1)||'home';show(v,false);if(v==='home')renderHome();if(v==='project')renderProject()}});
 
 /* ---------- Text, Chunks, Suche ---------- */
@@ -84,6 +84,7 @@ async function gemini({system,contents,json=false,temp=.6,maxTokens=1200}){
   if(!t)throw new Error('Leere Antwort');return t}
 function errText(e){if(e.message==='NOKEY')return 'Mir fehlt noch dein Gemini-Schlüssel. Trag ihn bitte unter Einstellungen ein, dann können wir loslegen. 🌱';
   if(e.status===429)return 'Das kostenlose Kontingent ist gerade aufgebraucht. Mach eine kleine Pause und versuch es in ein paar Minuten nochmals.';
+  if((e.status===400||e.status===403||e.status===401)&&/key|schlüssel|API_KEY|permission|denied|expired/i.test(e.message))return 'Dein Gemini-Schlüssel fehlt oder ist ungültig (vielleicht gelöscht). Bitte unter ⚙︎ Einstellungen einen neuen Schlüssel eintragen.';
   if(e.status===400||e.status===403)return 'Der Schlüssel oder das Modell funktioniert nicht ('+e.message+'). Bitte unter Einstellungen prüfen.';
   if(e.status===404)return 'Das Modell „'+model()+'“ gibt es nicht (mehr). Bitte unter Einstellungen ein anderes wählen.';
   return 'Ich erreiche die KI gerade nicht ('+e.message+'). Bist du online?'}
@@ -101,18 +102,32 @@ const FRUST=/frustr|verstehe? (das |es )?(nicht|nix)|kapier|schaff (es|das) nich
 
 /* ---------- Stimme ---------- */
 let voices=[];
-function loadVoices(){voices=(speechSynthesis?.getVoices()||[]).filter(v=>/^de/i.test(v.lang));const sel=$('#k-voicesel');if(!sel)return;
+function loadVoices(){voices=(window.speechSynthesis?.getVoices()||[]).filter(v=>/^de/i.test(v.lang));const sel=$('#k-voicesel');if(!sel)return;
   sel.innerHTML=voices.length?voices.map(v=>`<option value="${esc(v.name)}">${esc(v.name)} (${v.lang})</option>`).join(''):'<option value="">Keine deutsche Stimme gefunden</option>';
   const c=pickVoice();if(c)sel.value=c.name}
 function pickVoice(){const saved=LS.get('voice','');let v=voices.find(v=>v.name===saved);if(v)return v;
   const fem=/anna|petra|helena|marlene|vicki|katja|hedda|yannick|sarah|female|frau/i;
   return voices.find(v=>/de-CH/i.test(v.lang)&&fem.test(v.name))||voices.find(v=>/anna/i.test(v.name))||voices.find(v=>fem.test(v.name)&&!/yannick/i.test(v.name))||voices.find(v=>/de-DE/i.test(v.lang))||voices[0]}
-if('speechSynthesis' in window){loadVoices();speechSynthesis.onvoiceschanged=loadVoices}
+if('speechSynthesis' in window){loadVoices();try{speechSynthesis.addEventListener('voiceschanged',loadVoices)}catch{speechSynthesis.onvoiceschanged=loadVoices}}
 const speakOn=()=>LS.get('speak',false);
-function speak(t,force){if((!speakOn()&&!force)||!('speechSynthesis' in window))return;stopSpeak();
-  const clean=t.replace(/\(([^)]*Seite[^)]*)\)/g,'').replace(/[*_#]/g,'');const u=new SpeechSynthesisUtterance(clean);
-  const v=pickVoice();if(v){u.voice=v;u.lang=v.lang}else u.lang='de-DE';u.rate=.98;u.pitch=1.05;speechSynthesis.speak(u)}
-function stopSpeak(){try{speechSynthesis.cancel()}catch{}}
+/* iOS: Sprache muss einmal per Antippen „freigeschaltet“ werden; cancel() direkt vor speak() verschluckt die Ausgabe;
+   lange Texte brechen ab -> in Sätze teilen; nach Pause hängt die Ausgabe -> resume()-Anstoss. */
+const SS=('speechSynthesis' in window)?window.speechSynthesis:null;
+let ttsUnlocked=false,ttsGen=0,ttsKeep=null;
+function unlockTTS(){if(ttsUnlocked||!SS)return;ttsUnlocked=true;try{const u=new SpeechSynthesisUtterance(' ');u.volume=0;u.lang='de-DE';SS.speak(u);SS.resume()}catch{}}
+['touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,unlockTTS,{capture:true,passive:true}));
+function sentences(t){const out=[];for(const s of (t.match(/[^.!?;:\n]+[.!?;:]*|\n/g)||[t])){const x=s.trim();if(!x)continue;
+  if(x.length<=220){out.push(x);continue}let buf='';for(const w of x.split(/\s+/)){if((buf+' '+w).length>200&&buf){out.push(buf);buf=''}buf=(buf?buf+' ':'')+w}if(buf)out.push(buf)}return out}
+function speak(t,force,onDone){if((!speakOn()&&!force)||!SS||!t){onDone&&onDone();return}
+  const clean=String(t).replace(/\(([^)]*Seite[^)]*)\)/g,'').replace(/[*_#]/g,'');const parts=sentences(clean);if(!parts.length){onDone&&onDone();return}
+  const gen=++ttsGen;const busy=SS.speaking||SS.pending;try{SS.cancel()}catch{}
+  setTimeout(()=>{if(gen!==ttsGen)return;if(!voices.length)loadVoices();const v=pickVoice();
+    parts.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p);if(v){u.voice=v;u.lang=v.lang}else u.lang='de-DE';u.rate=.98;u.pitch=1.05;u.volume=1;
+      u.onerror=e=>{if(e.error!=='interrupted'&&e.error!=='canceled')console.warn('TTS',e.error);if(i===parts.length-1&&gen===ttsGen)onDone&&onDone()};if(i===parts.length-1)u.onend=()=>{if(gen===ttsGen)onDone&&onDone()};SS.speak(u)});
+    try{SS.resume()}catch{}
+    clearInterval(ttsKeep);ttsKeep=setInterval(()=>{if(gen!==ttsGen||!SS.speaking&&!SS.pending){clearInterval(ttsKeep);return}if(SS.paused)try{SS.resume()}catch{}},2000)
+  },busy?250:60)}
+function stopSpeak(){ttsGen++;clearInterval(ttsKeep);try{SS&&SS.cancel()}catch{}}
 function voiceBtn(){$('#b-voice').textContent=speakOn()?'🔊 Stimme an':'🔇 Stimme aus'}
 
 /* ---------- Home ---------- */
@@ -182,8 +197,8 @@ async function openChat(){show('chat');$('#c-title').textContent=cur.name;voiceB
   const msgs=(await byP('messages',cur.id)).sort((a,b)=>a.ts-b.ts);history=msgs.slice(-12);$('#chatlog').innerHTML='';
   if(!msgs.length)addMsg('bot',`Hallo! Schön, dass du da bist. 😊 Ich helfe dir mit „${cur.name}“. Frag mich einfach, was du wissen möchtest – ich antworte nur aus deinem Material und sag dir, auf welcher Seite es steht.`,false);
   else msgs.slice(-30).forEach(m=>addMsg(m.role,m.text,false));
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;$('#b-mic').classList.toggle('hidden',!SR);
-  $('#c-hint').textContent=SR?'':'Tipp: Zum Sprechen das 🎤 auf der iPhone-Tastatur antippen.';
+  const any=!!SRC||canRec();$('#b-mic').classList.toggle('hidden',!any);$('#b-talk').classList.toggle('hidden',!any);talkMode=false;talkBtn();
+  $('#c-hint').textContent=any?'':'Tipp: Zum Sprechen das 🎤 auf der iPhone-Tastatur antippen.';
   setTimeout(()=>window.scrollTo(0,document.body.scrollHeight),50)}
 function addMsg(role,text,save=true){const d=document.createElement('div');d.className='msg '+role;d.innerHTML=(role==='bot'?'<div class="who">Lehrerin</div>':'')+esc(text);$('#chatlog').append(d);
   window.scrollTo(0,document.body.scrollHeight);if(save){const m={id:uid(),projectId:cur.id,role,text,ts:Date.now()};put('messages',m);history.push(m);history=history.slice(-12)}return d}
@@ -195,20 +210,62 @@ async function send(){const t=$('#c-in').value.trim();if(!t)return;$('#c-in').va
     let sys=PERSONA+`\n\nPROJEKT: ${cur.name}\nMATERIAL (Auszüge, mit Stellenangabe in eckigen Klammern):\n${mat}`;
     if(FRUST.test(t))sys+='\n\nHINWEIS: Die Person wirkt gerade frustriert. Sei besonders verständnisvoll und mach den nächsten Schritt sehr klein.';
     const contents=history.slice(0,-1).slice(-8).map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]}));contents.push({role:'user',parts:[{text:t}]});
-    const ans=await gemini({system:sys,contents});typing.remove();addMsg('bot',ans);speak(ans)}
+    const ans=await gemini({system:sys,contents});typing.remove();addMsg('bot',ans);if(talkMode)speak(ans,true,()=>{if(talkMode&&!$('#v-chat').classList.contains('hidden'))setTimeout(startMic,350)});else speak(ans)}
   catch(e){typing.remove();addMsg('bot',errText(e),false)}
   $('#b-send').disabled=false}
 $('#b-send').onclick=send;
 $('#c-in').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!/iPhone|iPad|Android/.test(navigator.userAgent)){e.preventDefault();send()}});
 $('#b-voice').onclick=()=>{LS.set('speak',!speakOn());voiceBtn();if(!speakOn())stopSpeak();else speak('Gerne lese ich dir meine Antworten vor.')};
 $('#b-clear').onclick=async()=>{if(!confirm('Gespräch neu beginnen?'))return;await delByP('messages',cur.id);openChat()};
-let rec=null;
-$('#b-mic').onclick=()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;
-  if(rec){rec.stop();return}stopSpeak();rec=new SR();rec.lang='de-CH';rec.interimResults=true;rec.continuous=false;const base=$('#c-in').value;
-  rec.onresult=e=>{$('#c-in').value=(base+' '+[...e.results].map(r=>r[0].transcript).join('')).trim()};
-  rec.onerror=e=>{if(e.error==='language-not-supported'){rec.lang='de-DE'}toast('Mikrofon: '+e.error)};
-  rec.onend=()=>{rec=null;$('#b-mic').textContent='🎤'};$('#b-mic').textContent='⏹';try{rec.start()}catch{rec=null}};
-
+/* ---------- Spracheingabe ----------
+   iOS: webkitSpeechRecognition fehlt im Home-Bildschirm-Modus/In-App-Browser oder bricht ab.
+   Darum dort: Aufnahme (getUserMedia + MediaRecorder, iOS = audio/mp4) -> Gemini schreibt es auf Deutsch ab. */
+const IOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
+const canRec=()=>!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);
+let useSR=!!SRC&&!IOS&&!window.__forceRecorder;
+let rec=null,mr=null,talkMode=false;
+function micState(t){$('#c-hint').textContent=t||'';const qh=document.querySelector('#q-hear');if(qh)qh.textContent=t||'';$('#b-mic').textContent=(rec||mr)?'⏹':'🎤';$('#b-mic').classList.toggle('rec',!!(rec||mr))}
+function micErr(e){const n=e&&(e.name||e.error||e.message)||'';
+  if(/NotAllowed|not-allowed|Permission|service-not-allowed/i.test(n))return 'Das Mikrofon ist nicht erlaubt. Bitte in den iPhone-Einstellungen › Safari › Mikrofon auf „Erlauben“ stellen und die App neu öffnen.';
+  if(/NotFound|audio-capture/i.test(n))return 'Ich finde kein Mikrofon.';
+  if(/no-speech/i.test(n))return 'Ich habe nichts gehört. Tipp nochmals auf 🎤 und sprich.';
+  return 'Spracheingabe ging nicht ('+n+'). Du kannst auch tippen.'}
+function startMic(){stopSpeak();if(rec||mr)return;
+  if(useSR)return startSR();if(canRec())return startRecorder();
+  if(SRC)return startSR();micState('Spracheingabe wird hier nicht unterstützt – tippe auf das 🎤 der iPhone-Tastatur.')}
+function stopMic(){if(rec){rec.stop()}if(mr&&mr.state==='recording')mr.stop()}
+$('#b-mic').onclick=()=>{if(rec||mr){talkMode=false;talkBtn();stopMic()}else startMic()};
+function startSR(){rec=new SRC();rec.lang='de-CH';rec.interimResults=true;rec.continuous=false;const base=$('#c-in').value;let got=false,failed=false;
+  rec.onresult=e=>{got=true;$('#c-in').value=(base+' '+[...e.results].map(r=>r[0].transcript).join('')).trim()};
+  rec.onerror=e=>{failed=true;if(e.error==='language-not-supported'){rec.lang='de-DE'}
+    if(/not-allowed|service-not-allowed|network|audio-capture/.test(e.error)&&canRec()){useSR=false}else micState(micErr(e))};
+  rec.onend=()=>{rec=null;micState('');if(failed&&!useSR&&canRec()){startRecorder();return}if(got&&$('#c-in').value.trim())send();else if(talkMode&&!failed)setTimeout(startMic,300)};
+  try{rec.start();micState('Ich höre zu …')}catch(e){rec=null;useSR=false;if(canRec())startRecorder();else micState(micErr(e))}}
+async function startRecorder(onText,maxMs=60000){let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}})}catch(e){talkMode=false;talkBtn();micState(micErr(e));if(onText)onText(null,micErr(e));return}
+  const type=['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/aac'].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'';
+  try{mr=type?new MediaRecorder(stream,{mimeType:type}):new MediaRecorder(stream)}catch(e){stream.getTracks().forEach(t=>t.stop());micState(micErr(e));return}
+  const parts=[];let heard=false,quietSince=0,ac=null,iv=null;const t0=Date.now();
+  mr.ondataavailable=e=>{if(e.data&&e.data.size)parts.push(e.data)};
+  mr.onstop=async()=>{clearInterval(iv);try{ac&&ac.close()}catch{}stream.getTracks().forEach(t=>t.stop());const mime=(mr.mimeType||type||'audio/mp4').split(';')[0];mr=null;
+    const blob=new Blob(parts,{type:mime});if(blob.size<800){micState(talkMode?'':'Ich habe nichts gehört.');return}
+    micState('Wird erkannt …');
+    try{const txt=await transcribe(blob,mime);micState('');if(onText){onText(txt);return}if(!txt){micState('Ich habe dich nicht verstanden. Nochmals?');if(talkMode)setTimeout(startMic,800);return}
+      $('#c-in').value=(($('#c-in').value||'')+' '+txt).trim();send()}
+    catch(e){talkMode=false;talkBtn();const m=e.message==='NOKEY'||e.status?errText(e):'Erkennen ging nicht: '+e.message;micState(m);if(onText)onText(null,m)}};
+  if(maxMs<60000)setTimeout(()=>{if(mr&&mr.state==='recording')stopMic()},maxMs+300);mr.start(250);micState('Ich höre zu … (zum Beenden 🎤 antippen)');
+  // Stille-Erkennung: nach dem Sprechen 1,6 s Ruhe -> automatisch fertig
+  try{const AC=window.AudioContext||window.webkitAudioContext;ac=new AC();const src=ac.createMediaStreamSource(stream);const an=ac.createAnalyser();an.fftSize=1024;src.connect(an);const buf=new Uint8Array(an.fftSize);
+    iv=setInterval(()=>{an.getByteTimeDomainData(buf);let m=0;for(const x of buf)m=Math.max(m,Math.abs(x-128));const now=Date.now();
+      if(m>18){heard=true;quietSince=0}else if(heard){quietSince=quietSince||now;if(now-quietSince>1600)stopMic()}
+      if(!heard&&now-t0>Math.min(12000,maxMs))stopMic();if(now-t0>maxMs)stopMic()},120)}catch{}}
+async function transcribe(blob,mime){const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=()=>rej(r.error);r.readAsDataURL(blob)});
+  const t=await gemini({contents:[{role:'user',parts:[{inlineData:{mimeType:mime,data:b64}},{text:'Schreib genau auf, was in dieser Aufnahme auf Deutsch (evtl. Schweizerdeutsch) gesagt wird, in Hochdeutsch mit Schweizer Rechtschreibung. Gib NUR den gesprochenen Text zurück, ohne Anführungszeichen oder Kommentar. Wenn nichts Verständliches gesagt wird, gib ein leeres Ergebnis „-“ zurück.'}]}],temp:0,maxTokens:400});
+  const x=t.trim().replace(/^["„“]|["“”]$/g,'');return x==='-'?'':x}
+// Gesprächsmodus: zuhören -> Antwort vorlesen -> wieder zuhören
+function talkBtn(){const b=$('#b-talk');if(b)b.textContent=talkMode?'🔁 Gespräch an':'🔁 Gespräch';b&&b.classList.toggle('primary',talkMode)}
+$('#b-talk').onclick=()=>{talkMode=!talkMode;talkBtn();if(talkMode){toast('Gesprächsmodus: Sprich einfach, ich antworte und höre dann wieder zu.',3500);startMic()}else{stopMic();stopSpeak();micState('')}};
 /* ---------- Heute lernen (Spaced Repetition, fehlerfreies Lernen) ---------- */
 let S=null;
 $('#b-learn').onclick=()=>startSession();
@@ -216,24 +273,26 @@ async function startSession(){const goal=+LS.get('goal',10);let cards=await byP(
   if(!cards.some(c=>!c.seen)&&!cards.some(c=>c.seen&&c.due<=now)){
     if(!(await byP('chunks',cur.id)).length){toast('Lade zuerst Material hoch. 📄');return}
     toast('Die Lehrerin bereitet neue Fragen vor …',3000);
-    try{await generateCards(5)}catch(e){toast(errText(e),5000);return}cards=await byP('cards',cur.id)}
+    try{await generateCards(5)}catch(e){quizError(errText(e));return}cards=await byP('cards',cur.id)}
   const due=cards.filter(c=>c.seen&&c.due<=now).sort((a,b)=>a.due-b.due);
   const nw=cards.filter(c=>!c.seen).sort((a,b)=>a.created-b.created);
   const queue=[...due.slice(0,goal),...nw.slice(0,Math.max(0,Math.min(5,goal-due.length)))];
   if(!queue.length){toast('Heute ist alles erledigt. Super! 🌟');return}
-  S={queue,i:0,ok:0,start:Date.now(),timer:setInterval(tick,1000)};show('quiz');step()}
+  S={queue,i:0,ok:0,start:Date.now(),timer:setInterval(tick,1000)};show('quiz');qVoiceBtn();step()}
+function quizError(m){show('quiz');$('#q-box').innerHTML=`<h3>Das hat nicht geklappt</h3><p class="fb no">${esc(m)}</p><div class="row"><button class="primary" id="q-tosettings">⚙︎ Einstellungen</button><button id="q-close">Zurück</button></div>`;
+  speak(m,true);$('#q-tosettings').onclick=()=>{endSession();stack=['home'];show('settings');renderSettings()};$('#q-close').onclick=history_back}
 function tick(){if(!S)return;const m=Math.floor((Date.now()-S.start)/60000);$('#q-timer').textContent=`${m} Min.`;
   if(m>=12&&!S.warned){S.warned=true;toast('Du lernst schon 12 Minuten – toll! Eine Pause ist jetzt völlig okay. ☕',4500)}}
-function endSession(){if(S){clearInterval(S.timer);S=null}stopSpeak()}
+function endSession(){if(S){clearInterval(S.timer);S=null}stopSpeak();try{stopMic()}catch{}}
 function step(){const box=$('#q-box');$('#q-bar').style.width=(S.i/S.queue.length*100)+'%';
   if(S.i>=S.queue.length){const n=S.queue.length;
     box.innerHTML=`<h2>Geschafft! 🎉</h2><p>Du hast ${n} ${n===1?'Karte':'Karten'} geübt und ${S.ok} davon gewusst. Jede Wiederholung stärkt dein Gedächtnis – darauf kannst du stolz sein.</p><p class="muted small">Morgen geht es mit ein paar Minuten weiter. Ganz entspannt.</p><button class="primary big" id="q-done">Fertig</button>`;
     speak(`Geschafft! Du hast ${n} Karten geübt. Darauf kannst du stolz sein.`);$('#q-done').onclick=history_back;return}
   const c=S.queue[S.i];
   if(!c.seen&&!c._factShown){box.innerHTML=`<p class="small muted">Neu · Zuerst einprägen</p><p class="fact">${esc(c.fact)}</p><p class="src">${esc(c.src)}</p><button class="primary big" id="q-next">Verstanden – frag mich</button>`;
-    speak(c.fact);$('#q-next').onclick=()=>{c._factShown=true;step()};return}
+    const goNext=()=>{if(S&&S.queue[S.i]===c&&!c._factShown){c._factShown=true;step()}};speak(c.fact,qVoice(),qVoice()?()=>setTimeout(goNext,700):null);$('#q-next').onclick=goNext;return}
   if(!(c.dis&&c.dis.length>=2)&&key()&&!c._noMc){box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p><p class="muted">Die Lehrerin bereitet drei Antworten vor …</p>`;
-    ensureDistractors(c).then(()=>{if(S&&S.queue[S.i]===c)step()});return}
+    ensureDistractors(c).then(()=>{if(S&&S.err){const m=S.err;endSession();quizError(m);return}if(S&&S.queue[S.i]===c)step()});return}
   if(c.dis&&c.dis.length>=2)return mc(c,box);
   box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p><p class="small muted">Überleg kurz in Ruhe – oder sag die Antwort laut.</p><button class="primary big" id="q-show">Antwort zeigen</button>`;
   speak(c.q);$('#q-show').onclick=()=>{
@@ -247,23 +306,42 @@ Gib JSON zurück: {"falsch":["...","..."],"erklaerung":"..."}`;
   let o=JSON.parse(raw.replace(/^```(json)?|```$/g,''));if(Array.isArray(o))o=o[0]||{};
   const d=(o.falsch||o.distractors||[]).filter(x=>x&&x.trim()&&x.trim()!==c.a.trim()).slice(0,2);
   if(d.length<2)throw new Error('zu wenige');c.dis=d;if(!c.expl)c.expl=o.erklaerung||o.explanation||'';
-  const st={...c};delete st._factShown;delete st._opts;await put('cards',st)}catch(e){console.warn(e);c._noMc=true}}
+  const st={...c};delete st._factShown;delete st._opts;await put('cards',st)}catch(e){console.warn(e);c._noMc=true;if(e.message==='NOKEY'||e.status===400||e.status===401||e.status===403||e.status===404){S&&(S.err=errText(e))}}}
 const ABC=['A','B','C'];
+const qVoice=()=>LS.get('quizVoice',false);
+function qVoiceBtn(){const b=$('#q-voicemode');if(b){b.textContent=qVoice()?'🎙 Mit Stimme: an':'🎙 Mit Stimme';b.classList.toggle('primary',qVoice())}}
+function norm(t){return (t||'').toLowerCase().normalize('NFC').replace(/[^a-zäöüß0-9 ]/g,' ').replace(/\s+/g,' ').trim()}
+function matchAnswer(txt,o){const t=norm(txt);if(!t)return -1;
+  const ord=[/\b(a|ah|erste|ersten|erstes|eins|1)\b/,/\b(b|be|bee|zweite|zweiten|zweites|zwei|2)\b/,/\b(c|ce|zeh|tse|dritte|dritten|drittes|drei|3)\b/];
+  if(t.split(' ').length<=4){const hits=ord.map((r,i)=>r.test(t)?i:-1).filter(i=>i>=0);if(hits.length===1)return hits[0]}
+  const tk=new Set(tokens(t));let best=-1,bs=0;o.forEach((x,i)=>{const w=tokens(x.t);if(!w.length)return;const sc=w.filter(z=>tk.has(z)).length/w.length;if(sc>bs){bs=sc;best=i}});
+  if(bs>=.5)return best;const hits=ord.map((r,i)=>r.test(t)?i:-1).filter(i=>i>=0);return hits.length===1?hits[0]:-1}
 function mc(c,box){if(!c._opts)c._opts=[c.a,...c.dis.slice(0,2)].map(t=>({t,ok:t===c.a})).sort(()=>Math.random()-.5);const o=c._opts;
-  const readQ=()=>c.q+'. '+o.map((x,i)=>`${ABC[i]}: ${x.t}.`).join(' ');
+  const readQ=()=>c.q+'. '+o.map((x,i)=>`${ABC[i]}: ${x.t}.`).join(' ')+(qVoice()?' Welche Antwort ist richtig?':'');let tries=0;
   box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p>
   <div class="opts">${o.map((x,i)=>`<button class="opt" data-i="${i}"><span class="abc">${ABC[i]}</span><span>${esc(x.t)}</span></button>`).join('')}</div>
-  <div id="q-fb"></div><div class="row" style="margin-top:12px"><button id="q-read">🔊 Vorlesen</button><button id="q-stop">⏹ Stopp</button></div>`;
-  let after=readQ();
-  speak(after);$('#q-read').onclick=()=>speak(after,true);$('#q-stop').onclick=stopSpeak;
-  box.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{if(box.dataset.done==='1')return;box.dataset.done='1';
-    const ch=o[+b.dataset.i];
+  <p class="small muted" id="q-hear"></p>
+  <div id="q-fb"></div><div class="row" style="margin-top:12px"><button id="q-read">🔊 Vorlesen</button><button id="q-mic">🎤 Antworten</button><button id="q-stop">⏹ Stopp</button></div>`;
+  let after=readQ();const card=S.queue[S.i];const live=()=>S&&S.queue[S.i]===card&&box.dataset.done!=='1';
+  const listen=()=>{if(!live()||!canRec()||S.halt)return;startRecorder((txt,err)=>{if(!live())return;
+      if(err){$('#q-hear').textContent=err;return}
+      const i=matchAnswer(txt,o);if(i<0){if(tries++>=1){$('#q-hear').textContent='Ich habe dich nicht verstanden. Tippe auf eine Antwort oder auf 🎤.';speak('Ich habe dich leider nicht verstanden. Tippe einfach auf eine Antwort.',true);return}
+        $('#q-hear').textContent=`Ich habe „${txt||'…'}“ nicht zuordnen können. Nochmals bitte: A, B oder C?`;speak('Das habe ich nicht verstanden. Nochmals bitte: A, B oder C?',true,()=>setTimeout(listen,300));return}
+      $('#q-hear').textContent=`Du hast gesagt: „${txt}“`;choose(i)},6000)};
+  speak(after,qVoice(),qVoice()?()=>setTimeout(listen,300):null);
+  $('#q-read').onclick=()=>speak(after,true);$('#q-stop').onclick=()=>{S.halt=true;stopSpeak();stopMic();$('#q-hear').textContent='Gestoppt. Tippe auf eine Antwort, auf 🎤 oder auf „Mit Stimme“.'};$('#q-mic').onclick=()=>{stopSpeak();if(mr)stopMic();else{S.halt=false;tries=0;listen()}};
+  if(!canRec())$('#q-mic').classList.add('hidden');
+  const choose=idx=>{if(box.dataset.done==='1')return;box.dataset.done='1';try{stopMic()}catch{}
+    const ch=o[idx],b=box.querySelectorAll('.opt')[idx];
     box.querySelectorAll('.opt').forEach((bb,i)=>{bb.disabled=true;if(o[i].ok){bb.classList.add('right');bb.insertAdjacentHTML('beforeend','<span class="lbl">✓ Richtige Antwort</span>')}});
     if(!ch.ok){b.classList.add('wrong');b.insertAdjacentHTML('beforeend','<span class="lbl">Deine Wahl</span>')}
-    const warm=ch.ok?PRAISE[Math.floor(Math.random()*PRAISE.length)]:COMFORT[Math.floor(Math.random()*COMFORT.length)];
-    $('#q-fb').innerHTML=`<p class="fb ${ch.ok?'ok':'no'}">${ch.ok?'Richtig! ':'Nicht ganz. '}${esc(warm)}</p><p class="fact">${esc(c.expl||c.fact)}</p><p class="src">📖 ${esc(c.src)}</p><button class="primary big" id="q-weiter">Weiter →</button>`;
-    after=`${ch.ok?'Richtig!':'Nicht ganz.'} Die richtige Antwort ist ${ABC[o.findIndex(x=>x.ok)]}: ${c.a}. ${c.expl||c.fact}`;speak(after);
-    $('#q-weiter').onclick=()=>{stopSpeak();delete box.dataset.done;grade(c,ch.ok,true)}});}
+    const warm=ch.ok?PRAISE[Math.floor(Math.random()*PRAISE.length)]:COMFORT[Math.floor(Math.random()*COMFORT.length)];const ri=o.findIndex(x=>x.ok);
+    $('#q-fb').innerHTML=`<p class="fb ${ch.ok?'ok':'no'}">${ch.ok?'Ja, richtig! ':'Nein, leider falsch. '}${esc(warm)}</p><p class="fact">${esc(c.expl||c.fact)}</p><p class="src">📖 ${esc(c.src)}</p><button class="primary big" id="q-weiter">Weiter →</button>`;
+    after=ch.ok?`Ja, richtig! ${c.expl||c.fact}`:`Nein, leider falsch, richtig ist ${ABC[ri]}: ${c.a}. ${c.expl||c.fact}`;
+    let went=false;const go=()=>{if(went)return;went=true;stopSpeak();delete box.dataset.done;grade(c,ch.ok,true)};
+    speak(after,true,qVoice()?()=>setTimeout(()=>{if(S&&!S.halt&&S.queue[S.i]===card)go()},1200):null);
+    $('#q-weiter').onclick=go};
+  box.querySelectorAll('.opt').forEach(b=>b.onclick=()=>choose(+b.dataset.i))}
 const PRAISE=['Super gemacht!','Toll, weiter so!','Sehr gut!','Du wirst immer sicherer!','Klasse!'];
 const COMFORT=['Kein Problem – genau so lernt man. Wir üben das morgen nochmals.','Gut, dass du ehrlich bist. Morgen sitzt es schon besser.','Das ist völlig okay. Schritt für Schritt!'];
 async function grade(c,ok,quiet){const now=Date.now();
@@ -275,6 +353,7 @@ async function grade(c,ok,quiet){const now=Date.now();
   const msg=ok?PRAISE[Math.floor(Math.random()*PRAISE.length)]:COMFORT[Math.floor(Math.random()*COMFORT.length)];if(!quiet)toast(msg,1500);S.i++;step()}
 function history_back(){document.querySelector('#v-quiz [data-back]').click()}
 
+$('#q-voicemode').onclick=()=>{LS.set('quizVoice',!qVoice());qVoiceBtn();if(S)S.halt=false;if(S&&S.i<S.queue.length){stopSpeak();try{stopMic()}catch{};delete $('#q-box').dataset.done;step()}};
 /* ---------- Einstellungen ---------- */
 function renderSettings(){$('#k-key').value=key();$('#k-model').value=model();$('#k-speak').checked=speakOn();$('#k-goal').value=String(LS.get('goal',10));loadVoices();$('#k-status').textContent=''}
 $('#b-savekey').onclick=()=>{if($('#k-key').value.trim())saveKey($('#k-key').value.trim());try{$('#nokey').classList.toggle('hidden',!!key())}catch{};LS.set('model',$('#k-model').value.trim()||DEFAULT_MODEL);$('#k-status').textContent='Gespeichert ✓'};
