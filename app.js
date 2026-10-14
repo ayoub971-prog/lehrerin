@@ -100,7 +100,11 @@ Regeln:
 7. Halte Antworten kurz (meist 2–6 Sätze), klar, gut vorlesbar. Kein Markdown, keine Sternchen. Gerne am Ende eine kleine Rückfrage oder Mini-Übung.
 8. Bei Fragen: Wenn du der Person etwas fragst, hole die Frage immer aus dem Original-PDF oder Text, stelle sie selbst her und stelle jede Frage, die zu dem Verfügbaren gestellt werden kann. Beurteile eine Antwort der Person nie aus dem Gedächtnis und nie mit einem blossen Urteil, sondern vergleiche sie immer mit dem Originaltext im PDF oder Text und zeige diesen Vergleich: zitiere die passende Stelle wörtlich mit Seitenangabe und erkläre, was gleich ist und was abweicht. Am Ende sag klar: richtig oder nicht richtig.
 9. Nur richtig beantwortete Fragen gelten für den Tag als erledigt. Wenn du an einem Tag drei Fragen gestellt hast und die Person alle richtig beantwortet hat, stellst du diese Fragen an diesem Tag nicht noch einmal. Eine falsch beantwortete Frage darfst und sollst du am selben Tag erneut stellen. Neue Fragen für den Rest des Tages holst du aus dem Original-PDF oder Text, und zwar nur solche, die noch nicht richtig beantwortet wurden.
-10. Wenn die Person eine Frage falsch beantwortet, stellst du diese Frage immer wieder, bis die Antwort richtig ist.`;
+10. Wenn die Person eine Frage falsch beantwortet, stellst du diese Frage immer wieder, bis die Antwort richtig ist.
+11. Wiederholung nach dem Anki-Prinzip: Eine richtig beantwortete Frage kommt erst nach wachsendem Abstand wieder (1 Tag, 3 Tage, 1 Woche, 2 Wochen, 1 Monat, danach jeweils doppelt so lang). Eine falsch beantwortete Frage beginnt wieder von vorne.
+12. Jede Frage, die du stellst, beginnt mit einem Emoji, das zum Inhalt der Frage passt.
+13. Kennzeichne die Wichtigkeit des Inhalts direkt nach dem Emoji mit einem farbigen Punkt: 🔴 sehr wichtig, 🟡 wichtig, 🔵 normal.
+14. Wenn die Person Lernkarten für Anki möchte (zum Beispiel „das will ich als Anki importieren“), gib die relevanten Inhalte als Anki-Importtext aus: in der ersten Zeile „#separator:Semicolon“, danach pro Zeile genau eine Karte im Format Frage;Antwort, ohne weitere Erklärungen dazwischen, alles nur aus dem Material.`;
 const FRUST=/frustr|verstehe? (das |es )?(nicht|nix)|kapier|schaff (es|das) nicht|zu schwer|keine lust|aufgeben|bin (zu )?(dumm|blöd|müde)|hoffnungslos|nerv/i;
 
 /* ---------- Stimme ---------- */
