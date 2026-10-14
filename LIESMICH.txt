@@ -1,0 +1,4 @@
+Lehrerin v1 (Prototyp) – statische PWA. Auf GitHub Pages o. ä. hochladen, in Safari öffnen, "Zum Home-Bildschirm".
+Einstellungen: eigenen kostenlosen Gemini-Schlüssel von aistudio.google.com/apikey eintragen.
+Alles (Projekte, Material, Karten) bleibt im Browser (IndexedDB); nur Fragen + passende Textauszüge gehen an Google Gemini.
+pdf.js (Apache-2.0) in vendor/, Schriften Fraunces/Outfit (OFL) in fonts/.

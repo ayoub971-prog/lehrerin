@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101214"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Lehrerin">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Lehrerin – Lernen mit Herz</title>
+<style>
+@font-face{font-family:'Fraunces';font-weight:500 700;font-display:swap;src:url(fonts/Fraunces-latin.woff2) format('woff2')}
+@font-face{font-family:'Outfit';font-weight:400 700;font-display:swap;src:url(fonts/Outfit-latin.woff2) format('woff2')}
+:root{color-scheme:dark;--bg:#101214;--panel:#191c1f;--panel2:#202428;--text:#f6f0e7;--muted:#b7bdc4;--accent:#e8a04a;--line:#33383d;--ok:#7fc79a;--blue:#7fb2e8}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:radial-gradient(ellipse at top,#1b1d1e,var(--bg) 60%) fixed;background-color:var(--bg);color:var(--text);font:16px/1.45 Outfit,system-ui,sans-serif;min-height:100dvh}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);border-radius:999px;padding:12px 18px;background:var(--panel2);font-weight:600}
+button.primary{background:var(--accent);border-color:var(--accent);color:#17130e}
+button.big{width:100%;padding:16px;font-size:18px}
+button.ghost{background:none;border-color:transparent;color:var(--muted);padding:8px 10px}
+button.small{padding:8px 13px;font-size:14px}
+button:disabled{opacity:.5}
+input,textarea,select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+textarea{min-height:110px;resize:vertical}
+h1,h2,h3{font-family:Fraunces,Georgia,serif;font-weight:600;margin:.2em 0 .4em}
+h1{font-size:30px;color:var(--accent)}h2{font-size:23px}h3{font-size:18px}
+.wrap{max-width:640px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 24px)}
+.top{display:flex;align-items:center;gap:8px;margin-bottom:8px}.top .sp{flex:1}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:16px;margin:12px 0}
+.muted{color:var(--muted)}.small{font-size:14px}
+.row{display:flex;gap:10px;align-items:center}.row>*{flex:1}
+.list .item{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}.list .item:last-child{border:0}
+.item .name{flex:1;font-weight:600}
+.badge{display:inline-block;background:var(--accent);color:#17130e;border-radius:999px;padding:2px 10px;font-weight:700;font-size:14px}
+.stats{display:flex;gap:10px}.stat{flex:1;background:var(--panel2);border-radius:16px;padding:12px;text-align:center}.stat b{display:block;font-size:26px;font-family:Fraunces,serif;color:var(--accent)}
+.bar{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.hidden{display:none!important}
+#chatlog{display:flex;flex-direction:column;gap:10px;padding-bottom:150px}
+.msg{max-width:88%;padding:11px 14px;border-radius:18px;white-space:pre-wrap;word-wrap:break-word}
+.msg.user{align-self:flex-end;background:var(--accent);color:#17130e;border-bottom-right-radius:6px}
+.msg.bot{align-self:flex-start;background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:6px}
+.msg .who{font-size:12px;color:var(--accent);font-weight:700;margin-bottom:2px}
+.msg.typing{color:var(--muted);font-style:italic}
+.composer{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(transparent,var(--bg) 25%);padding:20px 12px calc(env(safe-area-inset-bottom) + 12px)}
+.composer .in{max-width:640px;margin:0 auto;display:flex;gap:8px;align-items:flex-end}
+.composer textarea{min-height:48px;max-height:140px;border-radius:24px;padding:12px 16px}
+.composer button{padding:12px 15px;flex:none}
+.quizq{font-size:21px;font-family:Fraunces,serif;line-height:1.35}
+.fact{border-left:4px solid var(--accent);padding:8px 12px;background:var(--panel2);border-radius:10px}
+.src{font-size:13px;color:var(--blue)}
+.note{background:#2a2216;border:1px solid #5a4322;border-radius:14px;padding:10px 12px;font-size:14px}
+.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);border-radius:14px;padding:10px 16px;z-index:9;max-width:90%}
+ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0}
+.switch input{width:auto;transform:scale(1.4)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<section id="v-home">
+  <div class="top"><h1 class="sp">Lehrerin</h1><button class="ghost" id="b-settings" aria-label="Einstellungen">⚙︎ Einstellungen</button></div>
+  <p class="muted" id="greet">Schön, dass du da bist!</p>
+  <div class="card">
+    <div class="stats">
+      <div class="stat"><b id="s-due">0</b>heute fällig</div>
+      <div class="stat"><b id="s-today">0/10</b>Tagesziel</div>
+      <div class="stat"><b id="s-days">0</b>Lerntage</div>
+    </div>
+    <p class="small muted" id="s-streaknote" style="margin:10px 0 0"></p>
+  </div>
+  <div id="nokey" class="note hidden">Für Chat und Fragen braucht es noch deinen kostenlosen Gemini-Schlüssel. <a href="#" id="go-settings" style="color:var(--accent)">Jetzt eintragen</a></div>
+  <div class="card">
+    <h2>Deine Projekte</h2>
+    <div class="list" id="projlist"></div>
+    <div class="row" style="margin-top:10px"><input id="newproj" placeholder="Neues Projekt, z. B. Biologie Kapitel 3"><button class="primary" id="b-addproj" style="flex:none">＋</button></div>
+  </div>
+</section>
+
+<section id="v-project" class="hidden">
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button><span class="sp"></span><button class="ghost" id="b-delproj">Löschen</button></div>
+  <h1 id="p-title"></h1>
+  <div class="row"><button class="primary big" id="b-learn">📚 Heute lernen <span class="badge" id="p-due">0</span></button></div>
+  <div class="row" style="margin-top:10px"><button class="big" id="b-chat">💬 Mit der Lehrerin sprechen</button></div>
+  <div class="card">
+    <h2>Material</h2>
+    <div class="list" id="doclist"></div>
+    <p class="small muted" id="p-stats"></p>
+    <div class="row" style="margin-top:6px"><button class="primary" id="b-upload">PDF oder .txt hochladen</button></div>
+    <input type="file" id="file" accept="application/pdf,.pdf,text/plain,.txt" multiple class="hidden">
+    <details style="margin-top:12px"><summary class="muted">Text einfügen</summary>
+      <input id="t-name" placeholder="Titel (z. B. Notizen)" style="margin:8px 0">
+      <textarea id="t-body" placeholder="Text hier einfügen …"></textarea>
+      <button id="b-addtext" style="margin-top:8px">Text speichern</button>
+    </details>
+    <p id="p-progress" class="small muted"></p>
+  </div>
+  <div class="card">
+    <h3>Lernkarten</h3>
+    <p class="small muted" id="p-cards"></p>
+    <button id="b-gen">✨ 5 neue Fragen aus dem Material erstellen</button>
+  </div>
+</section>
+
+<section id="v-chat" class="hidden">
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button><span class="sp"></span><button class="ghost small" id="b-voice">🔊 Stimme an</button><button class="ghost small" id="b-clear">Neu</button></div>
+  <h2 id="c-title"></h2>
+  <div id="chatlog"></div>
+  <div class="composer"><div class="in">
+    <button id="b-mic" class="hidden" aria-label="Sprechen">🎤</button>
+    <textarea id="c-in" rows="1" placeholder="Frag mich etwas zu deinem Material …"></textarea>
+    <button class="primary" id="b-send" aria-label="Senden">➤</button>
+  </div><p id="c-hint" class="small muted" style="max-width:640px;margin:6px auto 0;text-align:center"></p></div>
+</section>
+
+<section id="v-quiz" class="hidden">
+  <div class="top"><button class="ghost" data-back>‹ Fertig</button><span class="sp"></span><span class="small muted" id="q-timer"></span></div>
+  <div class="bar"><i id="q-bar" style="width:0"></i></div>
+  <div class="card" id="q-box"></div>
+</section>
+
+<section id="v-settings" class="hidden">
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button></div>
+  <h1>Einstellungen</h1>
+  <div class="card">
+    <h3>Gemini-Schlüssel (gratis)</h3>
+    <ol class="howto small">
+      <li>Öffne <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--accent)">aistudio.google.com/apikey</a> und melde dich mit deinem Google-Konto an.</li>
+      <li>Tippe auf „API-Schlüssel erstellen“ (Create API key).</li>
+      <li>Kopiere den Schlüssel (beginnt meist mit „AIza…“) und füge ihn hier ein.</li>
+    </ol>
+    <input id="k-key" type="password" autocomplete="off" placeholder="AIza…">
+    <p class="small muted">Der Schlüssel bleibt nur auf diesem Gerät gespeichert.</p>
+    <div class="note">Wichtig: In der kostenlosen Stufe darf Google deine Inhalte zur Verbesserung seiner Produkte verwenden. Bitte keine privaten oder vertraulichen Dokumente hochladen.</div>
+    <label class="small muted" style="display:block;margin-top:12px">KI-Modell</label>
+    <input id="k-model" list="models">
+    <datalist id="models"><option value="gemini-3.5-flash-lite"><option value="gemini-3.6-flash"><option value="gemini-3.8-flash"><option value="gemini-flash-latest"><option value="gemini-flash-lite-latest"></datalist>
+    <div class="row" style="margin-top:12px"><button class="primary" id="b-savekey">Speichern</button><button id="b-testkey">Testen</button></div>
+    <p class="small" id="k-status"></p>
+  </div>
+  <div class="card">
+    <h3>Stimme</h3>
+    <div class="switch"><span>Antworten vorlesen</span><input type="checkbox" id="k-speak"></div>
+    <select id="k-voicesel"></select>
+    <button class="small" id="b-voicetest" style="margin-top:8px">Probehören</button>
+  </div>
+  <div class="card">
+    <h3>Tagesziel</h3>
+    <select id="k-goal"><option value="5">5 Karten (ca. 5 Min.)</option><option value="10">10 Karten (ca. 10 Min.)</option><option value="15">15 Karten (ca. 15 Min.)</option></select>
+  </div>
+</section>
+
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
