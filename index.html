@@ -55,7 +55,7 @@ h1{font-size:30px;color:var(--accent)}h2{font-size:23px}h3{font-size:18px}
 .opt .lbl{width:100%;font-size:13px;font-weight:700;padding-left:44px}.opt.right .lbl{color:var(--ok)}.opt.wrong .lbl{color:#e07a72}
 .fb{font-size:18px;font-weight:700}.fb.ok{color:var(--ok)}.fb.no{color:var(--accent)}
 .note{background:#2a2216;border:1px solid #5a4322;border-radius:14px;padding:10px 12px;font-size:14px}
-.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);border-radius:14px;padding:10px 16px;z-index:9;max-width:90%}
+.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);border-radius:14px;padding:10px 16px;z-index:20;max-width:90%}
 ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 .switch{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0}
 .switch input{width:auto;transform:scale(1.4)}
@@ -125,6 +125,14 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
     <h3>Lernkarten</h3>
     <p class="small muted" id="p-cards"></p>
     <button id="b-gen">✨ 5 neue Fragen aus dem Material erstellen</button>
+  </div>
+  <div class="card" id="p-wishcard">
+    <h3>💭 Meine Wünsche für die Karteikarten</h3>
+    <p class="small muted">Was ist dir wichtig? Schwerpunkte, Themen, Anregungen oder Bedenken. Die Lehrerin beachtet das bei neuen Karten und Zusammenfassungen – aber immer nur aus deinem Material.</p>
+    <textarea id="p-wish" placeholder="z. B. Mehr Fragen zu Lenkzeiten und Pausen. Bitte einfache Sätze."></textarea>
+    <p class="small muted" id="p-wishhint"></p>
+    <div class="row" style="margin-top:8px"><button id="p-wishmic">🎤 Sprechen</button><button id="p-wishsave">Speichern</button></div>
+    <button class="primary big" id="p-wishgen" style="margin-top:10px">✨ Karten mit meinen Wünschen neu erstellen</button>
   </div>
 </section>
 

@@ -109,6 +109,7 @@ Regeln:
 16. Wenn du eine Antwort der Person beurteilst: Zitiere zuerst die passende Originalstelle wörtlich mit Stellenangabe, vergleiche die Antwort Punkt für Punkt mehrfach mit diesem Originaltext und sag erst danach klar „richtig“ oder „nicht richtig“. Bist du unsicher, sag das ehrlich.
 17. Wenn unten KORREKTUREN DER LERNENDEN PERSON stehen, haben sie Vorrang vor deinen früheren Aussagen, sofern sie durch das Material gedeckt sind. Widerspricht eine Korrektur dem Material, sag das freundlich und zeig die Originalstelle.
 18. Wenn die Person dich korrigiert, nimm es dankbar an, prüfe es am Material und sag klar, ob die Korrektur stimmt. Wiederhole einen Fehler, der korrigiert wurde, nie wieder.`;
+const wishText=p=>{const w=(p&&p.wishes||'').trim();return w?'\n\nWÜNSCHE DER LERNENDEN PERSON FÜR DIE KARTEIKARTEN (hohe Priorität: Schwerpunkte, Themen, Anregungen, Bedenken – beachte sie, aber alles weiterhin NUR aus dem Material, nichts erfinden):\n'+w.slice(0,1500):''};
 const corrText=p=>{const c=(p&&p.corrections||[]).slice(-20);return c.length?'\n\nKORREKTUREN DER LERNENDEN PERSON (haben Vorrang, sofern durch das Material gedeckt):\n'+c.map(x=>'- '+x.text+(x.about?' (bezieht sich auf: „'+x.about.slice(0,160)+'“)':'')).join('\n'):''};
 /* Prüf-Durchgang: ein zweiter KI-Aufruf prüft jede Aussage am Material (spart Kontingent: 1 statt 5 Aufrufe) */
 function verifyPrompt({draft,question,lastBot,mat,corr}){return `Du bist eine strenge Prüferin. Prüfe den ENTWURF einer Lehrerin Satz für Satz gegen das MATERIAL. Prüfe jede fachliche Aussage mehrfach: Steht sie wirklich wörtlich oder sinngemäss genau so im MATERIAL?
@@ -186,7 +187,7 @@ async function renderProject(){if(!cur)return;$('#p-title').textContent=cur.name
   $('#doclist').innerHTML=docs.length?docs.map(d=>`<div class="item"><span class="name">📄 ${esc(d.name)}</span><span class="small muted">${d.pages} ${d.label==='Abschnitt'?'Abschn.':'S.'}</span><button class="ghost small" data-deldoc="${d.id}">✕</button></div>`).join(''):'<p class="muted small">Noch kein Material. Lade ein PDF hoch oder füge Text ein.</p>';
   $('#p-stats').textContent=chunks.length?`${chunks.length} Textabschnitte bereit für Fragen.`:'';
   const due=cards.filter(c=>c.seen&&c.due<=now).length,nw=cards.filter(c=>!c.seen).length;
-  $('#p-due').textContent=due+nw;renderBook();$('#p-cards').textContent=cards.length?`${cards.length} Karten · ${due} fällig · ${nw} neu`:'Noch keine Karten. Die Lehrerin erstellt sie aus deinem Material.'}
+  $('#p-due').textContent=due+nw;renderBook();if(document.activeElement!==$('#p-wish'))$('#p-wish').value=cur.wishes||'';$('#p-cards').textContent=cards.length?`${cards.length} Karten · ${due} fällig · ${nw} neu`:'Noch keine Karten. Die Lehrerin erstellt sie aus deinem Material.'}
 $('#doclist').addEventListener('click',async e=>{const b=e.target.closest('[data-deldoc]');if(!b)return;if(!confirm('Dieses Material löschen?'))return;const id=b.dataset.deldoc;
   const ch=(await byP('chunks',cur.id)).filter(c=>c.docId===id);await tx('chunks','readwrite',o=>{ch.forEach(c=>o.delete(c.id))});await del('docs',id);renderProject()});
 $('#b-delproj').onclick=async()=>{if(!confirm(`Projekt „${cur.name}“ mit allem Material und allen Karten löschen?`))return;
@@ -202,14 +203,15 @@ $('#file').onchange=async e=>{const files=[...e.target.files];e.target.value='';
 $('#b-addtext').onclick=async()=>{const t=$('#t-body').value.trim();if(!t)return;await addDoc($('#t-name').value.trim()||'Eingefügter Text',textToPages(t),'Abschnitt');$('#t-body').value='';$('#t-name').value='';renderProject()};
 
 /* ---------- Karten erzeugen ---------- */
-async function generateCards(n=5){const chunks=await byP('chunks',cur.id);if(!chunks.length){toast('Lade zuerst Material hoch.');return 0}
+async function generateCards(n=5,focus=false){const chunks=await byP('chunks',cur.id);if(!chunks.length){toast('Lade zuerst Material hoch.');return 0}
   const used=new Set(LS.get('used.'+cur.id,[]));let pool=chunks.filter(c=>!used.has(c.id));if(pool.length<3){pool=chunks;used.clear()}
-  const start=Math.floor(Math.random()*Math.max(1,pool.length-3));const pick=pool.slice(start,start+3);
+  const start=Math.floor(Math.random()*Math.max(1,pool.length-3));let pick=pool.slice(start,start+3);
+  if(focus&&(cur.wishes||'').trim()){const hit=bm25(chunks,cur.wishes,3);if(hit.length)pick=hit}
   const mat=pick.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n');
   const prompt=`Erstelle höchstens ${n} kurze Lernkarten auf Deutsch (Schweizer Rechtschreibung) NUR aus diesem Material. Jede Karte prüft genau einen wichtigen Fakt.
 ${CARD_RULES}
 Zu jeder Frage gibt es genau 2 falsche, aber plausible Antworten (aus demselben Themengebiet des Materials, ähnlich lang wie die richtige, eindeutig falsch).
-Gib JSON zurück: [{"typ":"Wissen|Verstehen|Unterscheiden|Anwenden|Fehler erkennen","fakt":"der Fakt als 1-2 klare Sätze zum Einprägen","frage":"eine kurze Frage dazu","antwort":"kurze richtige Antwort","falsch":["falsche Antwort 1","falsche Antwort 2"],"erklaerung":"1 kurzer Satz, warum die richtige Antwort stimmt","stelle":"die Stellenangabe genau wie in eckigen Klammern"}]${corrText(cur)}
+Gib JSON zurück: [{"typ":"Wissen|Verstehen|Unterscheiden|Anwenden|Fehler erkennen","fakt":"der Fakt als 1-2 klare Sätze zum Einprägen","frage":"eine kurze Frage dazu","antwort":"kurze richtige Antwort","falsch":["falsche Antwort 1","falsche Antwort 2"],"erklaerung":"1 kurzer Satz, warum die richtige Antwort stimmt","stelle":"die Stellenangabe genau wie in eckigen Klammern"}]${wishText(cur)}${corrText(cur)}
 MATERIAL:\n${mat}`;
   const raw=await gemini({contents:[{role:'user',parts:[{text:prompt}]}],json:true,temp:.4});
   let arr;try{arr=JSON.parse(raw.replace(/^```(json)?|```$/g,''))}catch{throw new Error('Antwort war kein gültiges JSON')}
@@ -317,7 +319,7 @@ function quizError(m){show('quiz');$('#q-box').innerHTML=`<h3>Das hat nicht gekl
   speak(m,true);$('#q-tosettings').onclick=()=>{endSession();stack=['home'];show('settings');renderSettings()};$('#q-close').onclick=history_back}
 function tick(){if(!S)return;const m=Math.floor((Date.now()-S.start)/60000);$('#q-timer').textContent=`${m} Min.`;
   if(m>=12&&!S.warned){S.warned=true;toast('Du lernst schon 12 Minuten – toll! Eine Pause ist jetzt völlig okay. ☕',4500)}}
-function endSession(){if(S){clearInterval(S.timer);S=null}stopSpeak();try{stopMic()}catch{}}
+function endSession(){delete $('#q-box').dataset.done;if(S){clearInterval(S.timer);S=null}stopSpeak();try{stopMic()}catch{}}
 function step(){const box=$('#q-box');$('#q-bar').style.width=(S.i/S.queue.length*100)+'%';
   if(S.i>=S.queue.length){const n=S.queue.length;
     box.innerHTML=`<h2>Geschafft! 🎉</h2><p>Du hast ${n} ${n===1?'Karte':'Karten'} geübt und ${S.ok} davon gewusst. Jede Wiederholung stärkt dein Gedächtnis – darauf kannst du stolz sein.</p><p class="muted small">Morgen geht es mit ein paar Minuten weiter. Ganz entspannt.</p><button class="primary big" id="q-done">Fertig</button>`;
@@ -350,7 +352,7 @@ function matchAnswer(txt,o){const t=norm(txt);if(!t)return -1;
   if(t.split(' ').length<=4){const hits=ord.map((r,i)=>r.test(t)?i:-1).filter(i=>i>=0);if(hits.length===1)return hits[0]}
   const tk=new Set(tokens(t));let best=-1,bs=0;o.forEach((x,i)=>{const w=tokens(x.t);if(!w.length)return;const sc=w.filter(z=>tk.has(z)).length/w.length;if(sc>bs){bs=sc;best=i}});
   if(bs>=.5)return best;const hits=ord.map((r,i)=>r.test(t)?i:-1).filter(i=>i>=0);return hits.length===1?hits[0]:-1}
-function mc(c,box){if(!c._opts)c._opts=[c.a,...c.dis.slice(0,2)].map(t=>({t,ok:t===c.a})).sort(()=>Math.random()-.5);const o=c._opts;
+function mc(c,box){delete box.dataset.done;if(!c._opts)c._opts=[c.a,...c.dis.slice(0,2)].map(t=>({t,ok:t===c.a})).sort(()=>Math.random()-.5);const o=c._opts;
   const readQ=()=>c.q+'. '+o.map((x,i)=>`${ABC[i]}: ${x.t}.`).join(' ')+(qVoice()?' Welche Antwort ist richtig?':'');let tries=0;
   box.innerHTML=`<p class="small muted">Karte ${S.i+1} von ${S.queue.length}</p><p class="quizq">${esc(c.q)}</p>
   <div class="opts">${o.map((x,i)=>`<button class="opt" data-i="${i}"><span class="abc">${ABC[i]}</span><span>${esc(x.t)}</span></button>`).join('')}</div>
@@ -481,7 +483,7 @@ const parseJ=raw=>{try{return JSON.parse(raw.replace(/^```(json)?|```$/g,''))}ca
 async function segChunks(p,seg){return (await byP('chunks',p.id)).filter(c=>seg.includes(c.id)).sort((a,b)=>a.order-b.order)}
 async function bookCards(p,seg){const chunks=await segChunks(p,seg);const mat=chunks.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n');
   const prompt=`Du bist eine Lehrerin. Unten ist ein Teil von „${p.name}“. Zieh NUR die allerwichtigsten Inhalte heraus (Kernaussagen, zentrale Begriffe, wichtige Zusammenhänge – keine Nebensächlichkeiten) und mach daraus höchstens 6 Karteikarten (lieber weniger, aber gute).
-${RULES}${corrText(p)}
+${RULES}${wishText(p)}${corrText(p)}
 Gib JSON zurück: [${CARD_JSON}]
 Wenn der Text nichts Wichtiges enthält (z. B. Inhaltsverzeichnis, Impressum), gib [] zurück.
 TEXT:\n${mat}`;
@@ -489,7 +491,7 @@ TEXT:\n${mat}`;
   if(!Array.isArray(arr))arr=arr.karten||arr.cards||[];return {cards:toCards(arr,p,chunks)}}
 async function bookSum(p,seg){const chunks=await segChunks(p,seg);const mat=chunks.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n');
   const prompt=`Du bist eine Lehrerin. Unten ist ein Teil von „${p.name}“. Fasse die allerwichtigsten Punkte dieses Teils kurz, klar und gut vorlesbar zusammen (3 bis 6 Sätze, kein Markdown, keine Aufzählungszeichen) und erstelle 2 Wiederholungsfragen dazu.
-${RULES}
+${RULES}${wishText(p)}${corrText(p)}
 Gib JSON zurück: {"titel":"kurzer Titel dieses Teils (z. B. Kapitelname, wenn erkennbar)","zusammenfassung":"...","fragen":[${CARD_JSON}]}
 Wenn der Text nichts Wichtiges enthält (z. B. Inhaltsverzeichnis, Impressum), gib {"titel":"","zusammenfassung":"","fragen":[]} zurück.
 TEXT:\n${mat}`;
@@ -581,6 +583,24 @@ async function openProjects(){const [ps,cards]=await Promise.all([all('projects'
     cur=(bookObj&&bookObj.id===id)?bookObj:migrate((await all('projects')).find(p=>p.id===id));stack=['home','project'];show('project',false);renderProject();
     if(act==='learn')startSession();else if(act==='cards')openFlash()})}
 document.addEventListener('click',e=>{if(e.target.closest('[data-projekte]'))openProjects()});
+
+/* ---------- Wünsche für die Karteikarten ---------- */
+async function saveWish(){cur.wishes=$('#p-wish').value.trim();await put('projects',cur)}
+$('#p-wishsave').onclick=async()=>{await saveWish();toast('Deine Wünsche sind gespeichert ✓')};
+$('#p-wishgen').onclick=async()=>{await saveWish();if(!cur.wishes){toast('Schreib oder sprich zuerst deine Wünsche.');return $('#p-wish').focus()}
+  const b=$('#p-wishgen'),t=b.textContent;b.disabled=true;b.textContent='Die Lehrerin erstellt Karten nach deinen Wünschen …';
+  try{const k=await generateCards(5,true);if(k)toast(`${k} neue Karten nach deinen Wünschen ✓ Deine bisherigen Karten bleiben.`,3500)}catch(e){toast(errText(e),5000)}
+  b.disabled=false;b.textContent=t;renderProject()};
+$('#p-wishmic').onclick=()=>{const h=$('#p-wishhint');if(mr){stopMic();return}stopSpeak();
+  if(canRec()){h.textContent='Ich höre zu … (zum Beenden 🎤 antippen)';startRecorder((txt,err)=>{if(err){h.textContent=err;return}h.textContent=txt?'':'Ich habe nichts verstanden.';if(txt){$('#p-wish').value=(($('#p-wish').value||'')+' '+txt).trim();saveWish()}})}
+  else if(SRC){const r=new SRC();r.lang='de-CH';r.onresult=e=>{$('#p-wish').value=(($('#p-wish').value||'')+' '+e.results[0][0].transcript).trim();saveWish()};r.onend=()=>h.textContent='';h.textContent='Ich höre zu …';r.start()}
+  else h.textContent='Tipp: Zum Sprechen das 🎤 auf der iPhone-Tastatur antippen.'};
+
+/* ---------- Fehler sichtbar machen ---------- */
+let lastErr=0;function showErr(m){if(Date.now()-lastErr<4000)return;lastErr=Date.now();console.error(m);
+  toast('Hoppla, da ist ein Fehler passiert: '+String(m||'unbekannt').slice(0,140)+' – bitte die App schliessen und neu öffnen. Wenn es wieder passiert, schick mir ein Bildschirmfoto.',7000)}
+window.addEventListener('error',e=>showErr(e.message));
+window.addEventListener('unhandledrejection',e=>showErr(e.reason&&(e.reason.message||e.reason)));
 
 /* ---------- Start ---------- */
 renderHome().then(()=>syncKey()).then(resumeBooks);
