@@ -59,6 +59,9 @@ h1{font-size:30px;color:var(--accent)}h2{font-size:23px}h3{font-size:18px}
 ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
 .switch{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0}
 .switch input{width:auto;transform:scale(1.4)}
+.flash{min-height:260px;display:flex;flex-direction:column;justify-content:center;text-align:center;cursor:pointer}
+.flash .side{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.flash.back{border-color:var(--ok)}
 </style>
 </head>
 <body>
@@ -79,6 +82,7 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
   <div class="card">
     <h2>Deine Projekte</h2>
     <div class="list" id="projlist"></div>
+    <button id="b-newbook" class="big" style="margin-top:12px">📖 Buch-Modus: ganzes Buch hochladen</button>
     <div class="row" style="margin-top:10px"><input id="newproj" placeholder="Neues Projekt, z. B. Biologie Kapitel 3"><button class="primary" id="b-addproj" style="flex:none">＋</button></div>
   </div>
 </section>
@@ -88,6 +92,14 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
   <h1 id="p-title"></h1>
   <div class="row"><button class="primary big" id="b-learn">📚 Heute lernen <span class="badge" id="p-due">0</span></button></div>
   <div class="row" style="margin-top:10px"><button class="big" id="b-chat">💬 Mit der Lehrerin sprechen</button></div>
+  <div class="card hidden" id="p-book">
+    <h2>📖 Buch</h2>
+    <p class="small" id="bk-status"></p>
+    <div class="bar"><i id="bk-bar" style="width:0"></i></div>
+    <div class="row" style="margin-top:10px"><button class="primary" id="bk-run">▶ Wichtigstes herausziehen</button><button id="bk-pause" class="hidden">⏸ Pause</button></div>
+    <div class="row" style="margin-top:10px"><button class="big" id="bk-cards">🃏 Karteikarten ansehen</button></div>
+    <p class="small muted">Die Lehrerin liest das Buch Stück für Stück und macht aus den wichtigsten Inhalten Karteikarten. Du kannst die App jederzeit schliessen – beim nächsten Öffnen geht es dort weiter.</p>
+  </div>
   <div class="card">
     <h2>Material</h2>
     <div class="list" id="doclist"></div>
@@ -123,6 +135,30 @@ ol.howto{padding-left:20px;margin:6px 0}ol.howto li{margin:4px 0}
   <div class="top"><button class="ghost" data-back>‹ Fertig</button><span class="sp"></span><span class="small muted" id="q-timer"></span></div>
   <div class="bar"><i id="q-bar" style="width:0"></i></div>
   <div class="card" id="q-box"></div>
+</section>
+
+<section id="v-book" class="hidden">
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button></div>
+  <h1>Buch-Modus</h1>
+  <div class="card">
+    <p>Lade ein ganzes Buch hoch (PDF oder .txt) oder füge den Text ein. Die Lehrerin zieht die wichtigsten Inhalte heraus und macht daraus Karteikarten – mit Seitenangabe.</p>
+    <input id="bk-title" placeholder="Titel des Buchs" style="margin:8px 0">
+    <button class="primary big" id="bk-upload">PDF oder .txt auswählen</button>
+    <input type="file" id="bk-file" accept="application/pdf,.pdf,text/plain,.txt" class="hidden">
+    <details style="margin-top:12px"><summary class="muted">Oder Text einfügen</summary>
+      <textarea id="bk-text" placeholder="Buchtext hier einfügen …"></textarea>
+      <button id="bk-addtext" style="margin-top:8px">Text übernehmen</button>
+    </details>
+    <p id="bk-progress" class="small muted"></p>
+    <div class="note" style="margin-top:8px">Gratis-Stufe: Ein dickes Buch braucht viele Anfragen. Die Lehrerin macht deshalb kleine Pausen; bei sehr grossen Büchern kann es auch über mehrere Tage verteilt laufen.</div>
+  </div>
+</section>
+
+<section id="v-flash" class="hidden">
+  <div class="top"><button class="ghost" data-back>‹ Zurück</button><span class="sp"></span><span class="small muted" id="fl-count"></span></div>
+  <div class="card flash" id="fl-card"></div>
+  <div class="row"><button id="fl-prev">‹ Zurück</button><button id="fl-read">🔊 Vorlesen</button><button id="fl-next">Weiter ›</button></div>
+  <div class="row" style="margin-top:10px"><button class="primary big" id="fl-quiz">📚 Abfragen (3 Antworten)</button></div>
 </section>
 
 <section id="v-settings" class="hidden">

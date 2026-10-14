@@ -34,7 +34,7 @@ async function delByP(s,pid){const items=await byP(s,pid);await tx(s,'readwrite'
 
 /* ---------- Navigation ---------- */
 let cur=null; // aktuelles Projekt
-const views=['home','project','chat','quiz','settings'];let stack=['home'];
+const views=['home','project','chat','quiz','settings','book','flash'];let stack=['home'];
 function show(v,push=true){views.forEach(x=>$('#v-'+x).classList.toggle('hidden',x!==v));if(push&&stack.at(-1)!==v)stack.push(v);window.scrollTo(0,0);stopSpeak()}
 document.addEventListener('click',e=>{if(e.target.closest('[data-back]')){if(stack.at(-1)==='quiz')endSession();stack.pop();const v=stack.at(-1)||'home';show(v,false);if(v==='home')renderHome();if(v==='project')renderProject()}});
 
@@ -72,9 +72,9 @@ async function addDoc(name,pages,label){const id=uid();const chunks=chunkPages(p
 /* ---------- Gemini ---------- */
 const DEFAULT_MODEL='gemini-3.5-flash-lite';
 const key=()=>LS.get('key','')||memKey, model=()=>LS.get('model',DEFAULT_MODEL)||DEFAULT_MODEL;
-async function gemini({system,contents,json=false,temp=.6}){
+async function gemini({system,contents,json=false,temp=.6,maxTokens=1200}){
   if(!key())throw new Error('NOKEY');
-  const body={contents,generationConfig:{temperature:temp,maxOutputTokens:1200}};
+  const body={contents,generationConfig:{temperature:temp,maxOutputTokens:maxTokens}};
   if(system)body.systemInstruction={parts:[{text:system}]};
   if(json)body.generationConfig.responseMimeType='application/json';
   const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model())}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key()},body:JSON.stringify(body)});
@@ -130,8 +130,8 @@ async function renderHome(){await syncKey();
   const h=new Date().getHours();$('#greet').textContent=(h<11?'Guten Morgen!':h<18?'Schön, dass du da bist!':'Guten Abend!')+' Kleine Schritte bringen dich weit.';
   $('#nokey').classList.toggle('hidden',!!key());
   $('#projlist').innerHTML=ps.length?ps.sort((a,b)=>b.created-a.created).map(p=>{const pc=cards.filter(c=>c.projectId===p.id);const d=pc.filter(due).length,n=pc.filter(c=>!c.seen).length;
-    return `<div class="item" data-open="${p.id}"><span class="name">${esc(p.name)}</span>${d?`<span class="badge">${d} fällig</span>`:n?`<span class="small muted">${n} neu</span>`:''}<span class="muted">›</span></div>`}).join(''):'<p class="muted small">Noch kein Projekt. Leg eins an, z. B. pro Buch oder Kapitel.</p>'}
-$('#projlist').addEventListener('click',async e=>{const it=e.target.closest('[data-open]');if(!it)return;cur=(await all('projects')).find(p=>p.id===it.dataset.open);show('project');renderProject()});
+    return `<div class="item" data-open="${p.id}"><span class="name">${p.type==='book'?'📖 ':''}${esc(p.name)}</span>${d?`<span class="badge">${d} fällig</span>`:n?`<span class="small muted">${n} neu</span>`:''}<span class="muted">›</span></div>`}).join(''):'<p class="muted small">Noch kein Projekt. Leg eins an, z. B. pro Buch oder Kapitel.</p>'}
+$('#projlist').addEventListener('click',async e=>{const it=e.target.closest('[data-open]');if(!it)return;cur=(bookObj&&bookObj.id===it.dataset.open)?bookObj:(await all('projects')).find(p=>p.id===it.dataset.open);show('project');renderProject()});
 $('#b-addproj').onclick=async()=>{const n=$('#newproj').value.trim();if(!n)return $('#newproj').focus();const p={id:uid(),name:n,created:Date.now()};await put('projects',p);$('#newproj').value='';cur=p;show('project');renderProject()};
 $('#newproj').addEventListener('keydown',e=>{if(e.key==='Enter')$('#b-addproj').click()});
 $('#b-settings').onclick=()=>{show('settings');renderSettings()};$('#go-settings').onclick=e=>{e.preventDefault();$('#b-settings').click()};
@@ -142,7 +142,7 @@ async function renderProject(){if(!cur)return;$('#p-title').textContent=cur.name
   $('#doclist').innerHTML=docs.length?docs.map(d=>`<div class="item"><span class="name">📄 ${esc(d.name)}</span><span class="small muted">${d.pages} ${d.label==='Abschnitt'?'Abschn.':'S.'}</span><button class="ghost small" data-deldoc="${d.id}">✕</button></div>`).join(''):'<p class="muted small">Noch kein Material. Lade ein PDF hoch oder füge Text ein.</p>';
   $('#p-stats').textContent=chunks.length?`${chunks.length} Textabschnitte bereit für Fragen.`:'';
   const due=cards.filter(c=>c.seen&&c.due<=now).length,nw=cards.filter(c=>!c.seen).length;
-  $('#p-due').textContent=due+nw;$('#p-cards').textContent=cards.length?`${cards.length} Karten · ${due} fällig · ${nw} neu`:'Noch keine Karten. Die Lehrerin erstellt sie aus deinem Material.'}
+  $('#p-due').textContent=due+nw;renderBook();$('#p-cards').textContent=cards.length?`${cards.length} Karten · ${due} fällig · ${nw} neu`:'Noch keine Karten. Die Lehrerin erstellt sie aus deinem Material.'}
 $('#doclist').addEventListener('click',async e=>{const b=e.target.closest('[data-deldoc]');if(!b)return;if(!confirm('Dieses Material löschen?'))return;const id=b.dataset.deldoc;
   const ch=(await byP('chunks',cur.id)).filter(c=>c.docId===id);await tx('chunks','readwrite',o=>{ch.forEach(c=>o.delete(c.id))});await del('docs',id);renderProject()});
 $('#b-delproj').onclick=async()=>{if(!confirm(`Projekt „${cur.name}“ mit allem Material und allen Karten löschen?`))return;
@@ -285,8 +285,76 @@ $('#k-voicesel').onchange=e=>LS.set('voice',e.target.value);
 $('#b-voicetest').onclick=()=>{const was=speakOn();LS.set('speak',true);speak('Hallo! Ich bin deine Lehrerin. Schön, dass du heute lernst.');LS.set('speak',was)};
 $('#k-goal').onchange=e=>LS.set('goal',+e.target.value);
 
+/* ---------- Buch-Modus ---------- */
+const SEG=14000; // Zeichen pro KI-Anfrage (Gratis-Stufe schonen)
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function makeSegments(chunks){chunks=[...chunks].sort((a,b)=>a.page-b.page||a.order-b.order);const segs=[];let cur_=[],len=0;
+  for(const c of chunks){if(len+c.text.length>SEG&&cur_.length){segs.push(cur_);cur_=[];len=0}cur_.push(c.id);len+=c.text.length}if(cur_.length)segs.push(cur_);return segs}
+let bookBusy=null,bookObj=null; // laufendes Buch
+$('#b-newbook').onclick=()=>{$('#bk-title').value='';$('#bk-text').value='';$('#bk-progress').textContent='';show('book')};
+$('#bk-upload').onclick=()=>$('#bk-file').click();
+async function createBook(name,pages,label){
+  const p={id:uid(),name,created:Date.now(),type:'book'};cur=p;
+  const id=uid();const chunks=chunkPages(pages,id,name,p.id,label).map((c,i)=>({...c,order:i}));
+  if(!chunks.length){toast('In dieser Datei wurde kein Text gefunden (evtl. eingescannt).',4000);cur=null;return}
+  p.book={segs:makeSegments(chunks),next:0,state:'run',pages:pages.length,label,made:0};
+  await put('projects',p);await put('docs',{id,projectId:p.id,name,pages:pages.length,label,added:Date.now()});await putMany('chunks',chunks);
+  stack=['home','project'];show('project',false);renderProject();processBook()}
+$('#bk-file').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const title=$('#bk-title').value.trim()||f.name.replace(/\.(pdf|txt)$/i,'');
+  try{if(/pdf$/i.test(f.type)||/\.pdf$/i.test(f.name)){const pages=await readPdf(f,(i,n)=>$('#bk-progress').textContent=`Lese das Buch: Seite ${i} von ${n}`);await createBook(title,pages,'Seite')}
+    else await createBook(title,textToPages(await f.text()),'Abschnitt')}catch(err){console.error(err);toast('Konnte „'+f.name+'“ nicht lesen.',4000)}
+  $('#bk-progress').textContent=''};
+$('#bk-addtext').onclick=async()=>{const t=$('#bk-text').value.trim();if(!t)return $('#bk-text').focus();await createBook($('#bk-title').value.trim()||'Eingefügtes Buch',textToPages(t),'Abschnitt')};
+async function renderBook(){const box=$('#p-book');const b=cur&&cur.book;box.classList.toggle('hidden',!b);if(!b)return;
+  const n=b.segs.length,done=Math.min(b.next,n);$('#bk-bar').style.width=(done/n*100)+'%';
+  const running=bookBusy===cur.id;
+  $('#bk-status').textContent=done>=n?`Fertig ✓ Das ganze Buch (${b.pages} ${b.label==='Seite'?'Seiten':'Abschnitte'}) ist durchgearbeitet – ${b.made} Karteikarten.`:
+    `${running?'Die Lehrerin liest gerade':'Pausiert bei'} Teil ${done+1} von ${n} · ${b.made} Karteikarten bisher${b.err?' · '+b.err:''}`;
+  $('#bk-run').classList.toggle('hidden',running||done>=n);$('#bk-run').textContent=done?'▶ Weiter verarbeiten':'▶ Wichtigstes herausziehen';
+  $('#bk-pause').classList.toggle('hidden',!running)}
+$('#bk-run').onclick=async()=>{cur.book.state='run';cur.book.err='';await put('projects',cur);processBook()};
+$('#bk-pause').onclick=async()=>{cur.book.state='pause';await put('projects',cur);renderBook()};
+async function bookCards(p,seg){const chunks=(await byP('chunks',p.id)).filter(c=>seg.includes(c.id)).sort((a,b)=>a.page-b.page||a.order-b.order);
+  const mat=chunks.map(c=>`[${ref(c)}]\n${c.text}`).join('\n\n');
+  const prompt=`Du bist eine Lehrerin. Unten ist ein Teil des Buchs „${p.name}“. Zieh NUR die allerwichtigsten Inhalte heraus (Kernaussagen, zentrale Begriffe, wichtige Zusammenhänge – keine Nebensächlichkeiten) und mach daraus 3 bis 6 Karteikarten auf Deutsch (Schweizer Rechtschreibung, „ss“ statt „ß“).
+Regeln: Alles muss AUSSCHLIESSLICH aus diesem Text stammen, nichts erfinden, kein Allgemeinwissen. Jede Karte prüft genau einen wichtigen Punkt. Zu jeder Frage genau 2 falsche, aber plausible Antworten (ähnlich lang, eindeutig falsch).
+Gib JSON zurück: [{"fakt":"der Punkt in 1-2 klaren Sätzen","frage":"kurze Frage","antwort":"kurze richtige Antwort","falsch":["...","..."],"erklaerung":"1 kurzer Satz","stelle":"Stellenangabe genau wie in eckigen Klammern"}]
+Wenn der Text nichts Wichtiges enthält (z. B. Inhaltsverzeichnis, Impressum), gib [] zurück.
+TEXT:\n${mat}`;
+  const raw=await gemini({contents:[{role:'user',parts:[{text:prompt}]}],json:true,temp:.3,maxTokens:3000});
+  let arr;try{arr=JSON.parse(raw.replace(/^```(json)?|```$/g,''))}catch{throw new Error('Antwort war kein gültiges JSON')}
+  if(!Array.isArray(arr))arr=arr.karten||arr.cards||[];
+  return arr.filter(x=>x&&x.frage&&x.antwort).slice(0,6).map(x=>({id:uid(),projectId:p.id,q:x.frage,a:x.antwort,fact:x.fakt||x.antwort,dis:Array.isArray(x.falsch)?x.falsch.filter(Boolean).slice(0,2):undefined,expl:x.erklaerung||'',src:x.stelle||(chunks[0]?ref(chunks[0]):p.name),level:0,due:0,seen:false,created:Date.now(),book:true}))}
+async function processBook(){if(bookBusy||!cur||!cur.book)return;const p=cur;bookBusy=p.id;bookObj=p;renderBook();let fails=0;
+  try{while(p.book.next<p.book.segs.length&&p.book.state==='run'){
+    try{const cards=await bookCards(p,p.book.segs[p.book.next]);if(cards.length)await putMany('cards',cards);
+      p.book.made+=cards.length;p.book.next++;p.book.err='';fails=0;await put('projects',p);if(cur===p)renderProject();
+      if(p.book.next<p.book.segs.length)await sleep(window.__bookDelay??4500)}
+    catch(e){console.warn(e);
+      if(e.message==='NOKEY'||e.status===400||e.status===403||e.status===404||++fails>3){p.book.state='pause';p.book.err=errText(e);await put('projects',p);toast(errText(e),5000);break}
+      if(e.status===429){p.book.err='Kontingent erreicht – ich warte kurz und mache dann weiter …';if(cur===p)renderBook();await sleep(window.__bookWait??60000)}
+      else await sleep(3000)}}}
+  finally{bookBusy=null;bookObj=null;if(cur===p){renderBook();renderProject()}}
+  if(p.book.next>=p.book.segs.length&&cur===p)toast(`Buch fertig ✓ ${p.book.made} Karteikarten`,3500)}
+// Karteikarten
+let FL={cards:[],i:0,back:false};
+$('#bk-cards').onclick=async()=>{const cards=(await byP('cards',cur.id)).sort((a,b)=>a.created-b.created);if(!cards.length){toast('Noch keine Karteikarten – einen Moment, die Lehrerin liest noch.');return}
+  FL={cards,i:0,back:false};show('flash');flash()};
+function flash(){const c=FL.cards[FL.i];$('#fl-count').textContent=`Karte ${FL.i+1} von ${FL.cards.length}`;const el=$('#fl-card');el.classList.toggle('back',FL.back);
+  el.innerHTML=FL.back?`<p class="side">Antwort</p><p class="quizq" style="color:var(--ok)">${esc(c.a)}</p><p class="fact" style="text-align:left">${esc(c.fact)}</p><p class="src">📖 ${esc(c.src)}</p><p class="small muted">Tippen für die Frage</p>`:
+    `<p class="side">Frage</p><p class="quizq">${esc(c.q)}</p><p class="small muted">Tippen für die Antwort</p>`;
+  $('#fl-prev').disabled=FL.i===0;$('#fl-next').disabled=FL.i>=FL.cards.length-1;speak(FL.back?c.a+'. '+c.fact:c.q)}
+$('#fl-card').onclick=()=>{FL.back=!FL.back;flash()};
+$('#fl-prev').onclick=()=>{if(FL.i>0){FL.i--;FL.back=false;flash()}};
+$('#fl-next').onclick=()=>{if(FL.i<FL.cards.length-1){FL.i++;FL.back=false;flash()}};
+$('#fl-read').onclick=()=>{const c=FL.cards[FL.i];speak(FL.back?c.a+'. '+c.fact:c.q,true)};
+$('#fl-quiz').onclick=()=>{stack.pop();startSession()};
+// Fortsetzen nach Neustart: offene Bücher weiterlaufen lassen
+async function resumeBooks(){const ps=await all('projects');const p=ps.find(p=>p.book&&p.book.state==='run'&&p.book.next<p.book.segs.length);
+  if(p&&key()){const was=cur;cur=p;processBook();cur=was}}
+
 /* ---------- Start ---------- */
-renderHome();
+renderHome().then(()=>syncKey()).then(resumeBooks);
 if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js');
 window.__lehrerin={bm25,tokens,chunkPages};
 
